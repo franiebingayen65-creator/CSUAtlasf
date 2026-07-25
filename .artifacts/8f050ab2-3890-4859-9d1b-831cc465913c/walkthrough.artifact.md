@@ -1,31 +1,27 @@
-# Walkthrough - GPOA Navigation Refactor
+# Walkthrough - Activity Workflow UI Cleanup
 
-I have successfully refactored the GPOA navigation in the Organization Dashboard to make it cleaner and more focused.
+I have updated the "View Events" page in the Organization Dashboard to provide a cleaner and more professional interface.
 
 ## Changes Made
 
-### 1. Sidebar Consolidation
-- Combined **GPOA Submission**, **GPOA Status**, and **GPOA Report** into a single menu item: **Manage GPOA**.
-- This reduces sidebar clutter and group related tasks together.
+### 1. Header Update
+- Changed the title from "Operational Workflow" to **"Activity Progress Tracker"**.
+- Updated the description to clearly explain that this view tracks activities from approval through to completion.
 
-### 2. Manage GPOA Hub
-- The **Manage GPOA** view now serves as the central hub.
-- Added a **"New Proposal"** button in the top right to start a new submission.
-- Added a **"Generate Report"** button in the top right to access the PDF printing tool.
+### 2. Tab Bar Refinement
+- Removed the "Phase X:" numbering from all tabs.
+- Renamed tabs to more descriptive titles:
+    - **For Scheduling**: (Formerly Phase 1: Scheduling)
+    - **Awaiting Approval**: (Formerly Phase 2: Review)
+    - **Ongoing Events**: (Formerly Phase 3: Ongoing)
+    - **Completed**: (Formerly Phase 4: Completed)
 
-### 3. Improved Navigation
-- Added **Back Buttons** to the Submission and Report views so you can easily return to the main management screen without using the sidebar.
+## How to Update GitHub
 
-## Why changes aren't on GitHub yet
+To see these changes on your live website:
+1. Open the **Commit** tab (`Ctrl + K`).
+2. Type a message like: `UI Cleanup: Rename phases in Event Tracker`.
+3. Select **Commit and Push**.
 
-The changes I make in Android Studio are **local to your computer**. To see them on GitHub and update your live website, you must **Commit and Push** them.
-
-### How to update GitHub:
-Run these commands in your terminal:
-```bash
-git add .
-git commit -m "Refactor GPOA navigation and update admin tabs"
-git push
-```
-
-Once you run these, the GitHub Action will start building the updated version of your app!
+> [!TIP]
+> After pushing, wait about 2 minutes and then perform a **Hard Refresh** (`Ctrl + F5`) on your browser to see the updates.

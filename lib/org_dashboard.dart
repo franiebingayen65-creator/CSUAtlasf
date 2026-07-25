@@ -1722,8 +1722,8 @@ class _OrgViewEventsView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Operational Workflow', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Color(0xFF0F172A), letterSpacing: -1)),
-            const Text('Monitor the transition from approved GPOA to scheduled events.', style: TextStyle(color: Color(0xFF64748B), fontSize: 16)),
+            const Text('Activity Progress Tracker', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Color(0xFF0F172A), letterSpacing: -1)),
+            const Text('Track your approved GPOAs through the scheduling and completion process.', style: TextStyle(color: Color(0xFF64748B), fontSize: 16)),
             const SizedBox(height: 32),
             Container(
               padding: const EdgeInsets.all(6),
@@ -1736,10 +1736,10 @@ class _OrgViewEventsView extends StatelessWidget {
                 indicator: BoxDecoration(borderRadius: BorderRadius.circular(12), color: const Color(0xFF6366F1)),
                 dividerColor: Colors.transparent,
                 tabs: [
-                  Tab(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text('Phase 1: Scheduling (${approved.length})', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)))),
-                  Tab(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text('Phase 2: Review (${pendingDate.length})', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)))),
-                  Tab(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text('Phase 3: Ongoing (${scheduled.length})', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)))),
-                  Tab(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text('Phase 4: Completed (${completed.length})', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)))),
+                  Tab(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text('For Scheduling (${approved.length})', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)))),
+                  Tab(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text('Awaiting Approval (${pendingDate.length})', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)))),
+                  Tab(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text('Ongoing Events (${scheduled.length})', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)))),
+                  Tab(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text('Completed (${completed.length})', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)))),
                 ],
               ),
             ),
