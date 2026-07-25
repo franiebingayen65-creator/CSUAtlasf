@@ -1,0 +1,8 @@
+- [ ] PDF Compatibility Improvement
+    - [ ] Import `printing` and `pdf/widgets` (already there, but need Google Fonts)
+    - [ ] Load Roboto fonts in `GPOAPdfGenerator`
+    - [ ] Update all `pw.TextStyle` to use the loaded fonts
+- [ ] GitHub & Automation Setup
+    - [ ] Create `.github/workflows/deploy.yml` for GitHub Pages
+    - [ ] Initialize Git repository locally
+    - [ ] Stage and commit all files
