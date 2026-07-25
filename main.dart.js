@@ -56834,7 +56834,7 @@ n=A.L(new A.a_(A.b(["Specialized Organization","College Student Council","Campus
 s=this.a
 r=t.p
 n=A.at(A.b([o,A.z8(B.zT,q,n,new A.aN_(s),q,t.N)],r),B.J,B.B,B.aC,0,B.M)
-return A.fl(A.b([A.dE(B.c3,q,new A.aN0(a),q),A.f5(B.S0,new A.aN1(s,this.b,p,a),q)],r),n,B.b8D)},
+return A.fl(A.b([A.dE(B.c3,q,new A.aN0(a),q),A.f5(B.S0,new A.aN1(s,this.b,p,a),q)],r),n,B.b8E)},
 $S:19}
 A.aMZ.prototype={
 $1(a){var s=null
@@ -56976,7 +56976,7 @@ p=A.W(q).i("a_<1,ex<n>>")
 q=A.L(new A.a_(q,new A.aNu(),p),p.i("al.E"))
 p=t.p
 s=A.at(A.b([l,j,g,A.z8(B.zP,h,q,new A.aNv(i),n,s)],p),B.J,B.B,B.aC,0,B.M)
-return A.fl(A.b([A.dE(B.c3,n,new A.aNw(a),n),A.f5(B.RU,new A.aNx(i,r,m,k,o.e,a),n)],p),s,B.b8c)},
+return A.fl(A.b([A.dE(B.c3,n,new A.aNw(a),n),A.f5(B.RU,new A.aNx(i,r,m,k,o.e,a),n)],p),s,B.b8d)},
 $S:19}
 A.aNs.prototype={
 $1(a){var s=null
@@ -57072,7 +57072,7 @@ o=A.W(p).i("a_<1,ex<n>>")
 p=A.L(new A.a_(p,new A.aNk(),o),o.i("al.E"))
 o=t.p
 r=A.at(A.b([k,i,g,f,A.z8(B.zP,m,p,new A.aNl(s),m,r)],o),B.J,B.B,B.aC,0,B.M)
-return A.fl(A.b([A.dE(B.c3,m,new A.aNm(a),m),A.f5(B.S0,new A.aNn(s,q,l,j,h,a),m)],o),r,B.b8r)},
+return A.fl(A.b([A.dE(B.c3,m,new A.aNm(a),m),A.f5(B.S0,new A.aNn(s,q,l,j,h,a),m)],o),r,B.b8s)},
 $S:19}
 A.aNi.prototype={
 $1(a){var s=null
@@ -57175,7 +57175,7 @@ s=b.h(0,"title")
 m=A.a3(s==null?"Untitled Activity":s,p,p,p,p,B.vx,p,p,p)
 s=t.p
 s=A.at(A.b([B.fh,A.aR(A.b([new A.ng(n,p),B.dY,B.a2L,B.oN,A.a3(A.ea(b.h(0,"proposed_date")),p,p,p,p,B.b5z,p,p,p)],s),B.J,B.B,B.E,0,p)],s),B.Y,B.B,B.E,0,B.M)
-q=l?A.f5(B.b8C,new A.aMk(this,a,b,c),A.eI(p,p,B.a3,p,p,p,0,p,p,B.F,p,p,p,p,p,p,p,p,p,p)):B.a2Y
+q=l?A.f5(B.b8D,new A.aMk(this,a,b,c),A.eI(p,p,B.a3,p,p,p,0,p,p,B.F,p,p,p,p,p,p,p,p,p,p)):B.a2Y
 return A.aey(A.jF(!1,B.a_C,p,p,!0,p,p,!0,p,r,p,p,p,p,new A.aMl(this,a,b,c),!1,p,p,p,p,p,s,p,m,p,q,p),0,B.lY,new A.c4(k,new A.aN(j,i,B.X,-1)))},
 a45(a,b,c){var s=null
 A.dy(s,s,!0,s,new A.aMv(this,b,c,a),a,s,!0,t.z)}}
@@ -57247,7 +57247,7 @@ if(J.c(c.h(0,"status"),"Awaiting Date Approval")){b=A.aB(20)
 q=A.eO(B.a3.b5(0.1),1)
 p=g.a
 o=g.d
-s.push(A.aJ(f,A.aR(A.b([A.aJ(f,B.a2k,B.N,f,new A.aI(B.a3.b5(0.1),f,f,f,f,f,B.cH),f,f,f,B.dR,f,f,f),B.dX,A.bg(A.at(A.b([B.b9r,B.fh,A.a3(A.ea(c.h(0,e)),f,f,f,f,B.b4H,f,f,f)],r),B.Y,B.B,B.E,0,B.M),1),B.dX,A.mD(B.a21,B.b9J,new A.aMt(p,o,c,a),A.eI(f,f,B.dp,f,f,f,f,f,f,B.F,f,f,B.hW,f,new A.c4(A.aB(12),B.U),f,f,f,f,f)),B.cC,A.b_3(B.a2P,B.b8G,new A.aMu(p,o,c,a),A.arc(f,f,f,f,f,f,f,f,f,B.cK,f,f,B.hW,f,new A.c4(A.aB(12),B.U),B.U7,f,f,f,f))],r),B.J,B.B,B.E,0,f),B.N,f,new A.aI(B.dq,f,q,b,f,f,B.V),f,f,B.a_j,B.dt,f,f,f))}b=c.h(0,"title")
+s.push(A.aJ(f,A.aR(A.b([A.aJ(f,B.a2k,B.N,f,new A.aI(B.a3.b5(0.1),f,f,f,f,f,B.cH),f,f,f,B.dR,f,f,f),B.dX,A.bg(A.at(A.b([B.b9r,B.fh,A.a3(A.ea(c.h(0,e)),f,f,f,f,B.b4H,f,f,f)],r),B.Y,B.B,B.E,0,B.M),1),B.dX,A.mD(B.a21,B.b9J,new A.aMt(p,o,c,a),A.eI(f,f,B.dp,f,f,f,f,f,f,B.F,f,f,B.hW,f,new A.c4(A.aB(12),B.U),f,f,f,f,f)),B.cC,A.b_3(B.a2P,B.b8H,new A.aMu(p,o,c,a),A.arc(f,f,f,f,f,f,f,f,f,B.cK,f,f,B.hW,f,new A.c4(A.aB(12),B.U),B.U7,f,f,f,f))],r),B.J,B.B,B.E,0,f),B.N,f,new A.aI(B.dq,f,q,b,f,f,B.V),f,f,B.a_j,B.dt,f,f,f))}b=c.h(0,"title")
 if(b==null)b=""
 r=c.h(0,"sdgs")
 if(r==null)r=""
@@ -57311,7 +57311,7 @@ return A.x($async$$0,r)},
 $S:8}
 A.aMr.prototype={
 $1(a){var s=null
-return A.fl(A.b([A.dE(B.c3,s,new A.aMo(a),s),A.f5(B.b9m,new A.aMp(a),A.eI(s,s,B.dp,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s))],t.p),B.b9P,B.b8H)},
+return A.fl(A.b([A.dE(B.c3,s,new A.aMo(a),s),A.f5(B.b9m,new A.aMp(a),A.eI(s,s,B.dp,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s))],t.p),B.b9P,B.b8I)},
 $S:19}
 A.aMo.prototype={
 $0(){A.bG(this.a,!1).bI(!1)
@@ -57355,8 +57355,8 @@ case 1:return A.v(p.at(-1),r)}})
 return A.x($async$$0,r)},
 $S:8}
 A.aMq.prototype={
-$1(a){var s=null,r=t.p,q=A.at(A.b([B.b82,B.ck,A.it(s,B.bZ,!1,s,!0,B.al,s,A.jg(),this.a,s,s,s,s,s,2,B.a3r,B.a7,!0,s,!0,s,!1,s,B.bW,s,s,s,s,s,s,s,s,3,s,s,!1,"\u2022",s,s,s,s,s,!1,s,s,!1,s,!0,s,B.c7,s,s,s,s,s,s,s,s,s,s,s,s,!0,B.aP,s,B.cE,s,s,s,s)],r),B.J,B.B,B.aC,0,B.M)
-return A.fl(A.b([A.dE(B.c3,s,new A.aMm(a),s),A.f5(B.b8a,new A.aMn(a),A.eI(s,s,B.cK,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s))],r),q,B.b9g)},
+$1(a){var s=null,r=t.p,q=A.at(A.b([B.b83,B.ck,A.it(s,B.bZ,!1,s,!0,B.al,s,A.jg(),this.a,s,s,s,s,s,2,B.a3r,B.a7,!0,s,!0,s,!1,s,B.bW,s,s,s,s,s,s,s,s,3,s,s,!1,"\u2022",s,s,s,s,s,!1,s,s,!1,s,!0,s,B.c7,s,s,s,s,s,s,s,s,s,s,s,s,!0,B.aP,s,B.cE,s,s,s,s)],r),B.J,B.B,B.aC,0,B.M)
+return A.fl(A.b([A.dE(B.c3,s,new A.aMm(a),s),A.f5(B.b8b,new A.aMn(a),A.eI(s,s,B.cK,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s))],r),q,B.b9g)},
 $S:19}
 A.aMm.prototype={
 $0(){A.bG(this.a,!1).bI(!1)
@@ -57369,7 +57369,7 @@ $S:0}
 A.a1n.prototype={
 I(a){var s=this.c,r=A.W(s).i("ah<1>"),q=A.L(new A.ah(s,new A.aDH(),r),r.i("o.E"))
 s=q.length
-return new A.aF(B.d_,A.at(A.b([B.b8m,B.b8F,B.hm,A.bg(s===0?B.WK:A.GM(null,B.a7,B.b1t,new A.aDI(this,q),s,null),1)],t.p),B.Y,B.B,B.E,0,B.M),null)},
+return new A.aF(B.d_,A.at(A.b([B.b8n,B.b8G,B.hm,A.bg(s===0?B.WK:A.GM(null,B.a7,B.b1t,new A.aDI(this,q),s,null),1)],t.p),B.Y,B.B,B.E,0,B.M),null)},
 Au(a){var s=0,r=A.y(t.H),q,p=2,o=[],n,m,l
 var $async$Au=A.u(function(b,c){if(b===1){o.push(c)
 s=p}for(;;)switch(s){case 0:if(a==null){s=1
@@ -57439,7 +57439,7 @@ s=A.b([s,B.kQ,A.a3(r==null?"Untitled":r,2,B.bl,o,o,B.RH,o,o,o),B.er],p)
 if(l){r=this.a
 p=A.b([A.bg(A.f5(B.b9i,new A.aDF(r,m),A.eI(o,o,B.dq,o,o,o,0,o,o,B.cp,o,o,o,o,o,o,o,o,o,o)),1),B.dY],p)
 if(!k)p.push(A.et(o,o,o,B.a2v,o,o,new A.aDG(r,a,m),o,o,o,"Approve Report"))
-s.push(A.aR(p,B.J,B.B,B.E,0,o))}else s.push(B.b8u)
+s.push(A.aR(p,B.J,B.B,B.E,0,o))}else s.push(B.b8v)
 return A.aJ(o,new A.aF(B.dt,A.at(s,B.Y,B.B,B.E,0,B.M),o),B.N,o,new A.aI(B.F,o,i,j,o,o,B.V),o,o,o,o,o,o,o)},
 $S:55}
 A.aDF.prototype={
@@ -57488,7 +57488,7 @@ k=A.a3(k==null?"":k,p,p,p,p,B.iL,p,p,p)
 j=q.a.c.h(0,"type")
 s=t.p
 j=A.b([k,A.a3(j==null?"":j,p,p,p,p,p,p,p,p),B.hS,new A.M4("Adviser",l.h(0,o),B.rG,p),new A.M4("President",m.h(0,o),B.zd,p),B.ck],s)
-if(q.e.length!==0){k=A.b([B.b80],s)
+if(q.e.length!==0){k=A.b([B.b81],s)
 r=q.e
 B.m.P(k,new A.a_(r,new A.aEr(),A.W(r).i("a_<1,e>")))
 k.push(B.hS)
@@ -57537,7 +57537,7 @@ A.M4.prototype={
 I(a){var s=null,r=A.aB(8),q=t.p
 return A.aR(A.b([A.aJ(s,A.cX(this.e,B.dO,s,18),B.N,s,new A.aI(B.lE,s,s,r,s,s,B.V),s,s,s,B.ef,s,s,s),B.cC,A.at(A.b([A.a3(this.c,s,s,s,s,B.b3J,s,s,s),A.a3(this.d,s,s,s,s,B.b7A,s,s,s)],q),B.Y,B.B,B.E,0,B.M)],q),B.J,B.B,B.E,0,s)}}
 A.a4t.prototype={
-I(a){return new A.aF(B.d_,A.at(A.b([B.b8e,B.b8p,B.hm,A.bg(A.GM(null,B.a7,B.b1v,new A.aJX(this),this.c.length,null),1)],t.p),B.Y,B.B,B.E,0,B.M),null)},
+I(a){return new A.aF(B.d_,A.at(A.b([B.b8f,B.b8q,B.hm,A.bg(A.GM(null,B.a7,B.b1v,new A.aJX(this),this.c.length,null),1)],t.p),B.Y,B.B,B.E,0,B.M),null)},
 Pl(a,b,c){return this.aAK(a,b,c)},
 aAK(a,b,c){var s=0,r=A.y(t.H),q=this,p,o,n
 var $async$Pl=A.u(function(d,e){if(d===1)return A.v(e,r)
@@ -57693,7 +57693,7 @@ this.aJ()},
 I(a){var s=this,r=null,q=A.wb(r,A.aJ(r,r,B.N,r,new A.aI(B.F.b5(0.1),r,r,r,r,r,B.cH),r,300,r,r,r,r,300),r,r,r,-100,-100,r),p=A.wb(-50,A.aJ(r,r,B.N,r,new A.aI(B.F.b5(0.1),r,r,r,r,r,B.cH),r,200,r,r,r,r,200),r,r,-50,r,r,r),o=B.F.b5(0.95),n=A.aB(32),m=A.b([new A.bi(0,B.ak,B.S.b5(0.1),B.Ln,40)],t.V),l=A.a3("Welcome Back",r,r,r,r,A.d_(r,r,A.bJ(4280166715),r,r,r,r,r,r,r,r,32,r,r,B.bN,r,r,!0,r,-0.5,r,r,r,r,r,r),r,r,r),k=A.a3("Please enter your details to sign in",r,r,r,r,A.d_(r,r,B.dO,r,r,r,r,r,r,r,r,16,r,r,r,r,r,!0,r,r,r,r,r,r,r,r),r,r,r),j=s.ame(s.f,B.rG,"Email or Username",new A.aMh()),i=s.Yw(s.r,B.a0L,!0,"Password",s.d,new A.aMi(s),new A.aMj()),h=s.w?r:s.gatz(),g=A.eI(r,r,B.a3,r,r,r,0,r,r,B.F,r,r,r,r,new A.c4(A.aB(16),B.U),r,r,r,r,r),f=t.p
 g=A.bg(new A.aF(B.yw,A.ajk(r,A.at(A.b([l,B.dZ,k,B.hn,j,B.kQ,i,B.bU,A.d6(A.f5(s.w?B.X7:B.b8J,h,g),56,1/0)],f),B.Y,B.c_,B.E,0,B.M),s.e),r),1)
 h=A.b([A.bJ(4283385573),A.bJ(4286331629)],t.t_)
-return A.ax2(r,A.aJ(r,A.kH(B.di,A.b([q,p,A.ew(A.aJ(r,A.aR(A.b([g,A.bg(A.aJ(r,A.at(A.b([A.aJ(r,A.aZF("assets/images/csulogo.png",r,80,80),B.N,r,new A.aI(B.F,r,r,r,r,r,B.cH),r,r,r,B.c7,r,r,r),B.bU,B.b8A,B.ck,A.a3("A Centralized Activity Tracking, Liaison and Archiving System for Student Organizations.",r,r,r,r,A.d_(r,r,B.F.b5(0.8),r,r,r,r,r,r,r,r,16,r,r,r,r,1.6,!0,r,r,r,r,r,r,r,r),B.fj,r,r),B.er,A.a3("CSU LAL-LO PORTAL",r,r,r,r,A.d_(r,r,B.F.b5(0.5),r,r,r,r,r,r,r,r,12,r,r,B.aE,r,r,!0,r,1.5,r,r,r,r,r,r),r,r,r)],f),B.J,B.c_,B.E,0,B.M),B.N,r,new A.aI(r,r,r,r,r,new A.ok(B.wx,B.TB,B.es,h,r,r),B.V),r,r,r,B.yw,r,r,r),1)],f),B.J,B.B,B.E,0,r),B.cY,r,new A.aI(o,r,r,n,m,r,B.V),r,600,B.qR,r,r,r,1000),r,r)],f),B.al,B.d5,r),B.N,r,B.UC,r,1/0,r,r,r,r,1/0))},
+return A.ax2(r,A.aJ(r,A.kH(B.di,A.b([q,p,A.ew(A.aJ(r,A.aR(A.b([g,A.bg(A.aJ(r,A.at(A.b([A.aJ(r,A.aZF("assets/images/csulogo.png",r,80,80),B.N,r,new A.aI(B.F,r,r,r,r,r,B.cH),r,r,r,B.c7,r,r,r),B.bU,B.b8B,B.ck,A.a3("A Centralized Activity Tracking, Liaison and Archiving System for Student Organizations.",r,r,r,r,A.d_(r,r,B.F.b5(0.8),r,r,r,r,r,r,r,r,16,r,r,r,r,1.6,!0,r,r,r,r,r,r,r,r),B.fj,r,r),B.er,A.a3("CSU LAL-LO PORTAL",r,r,r,r,A.d_(r,r,B.F.b5(0.5),r,r,r,r,r,r,r,r,12,r,r,B.aE,r,r,!0,r,1.5,r,r,r,r,r,r),r,r,r)],f),B.J,B.c_,B.E,0,B.M),B.N,r,new A.aI(r,r,r,r,r,new A.ok(B.wx,B.TB,B.es,h,r,r),B.V),r,r,r,B.yw,r,r,r),1)],f),B.J,B.B,B.E,0,r),B.cY,r,new A.aI(o,r,r,n,m,r,B.V),r,600,B.qR,r,r,r,1000),r,r)],f),B.al,B.d5,r),B.N,r,B.UC,r,1/0,r,r,r,r,1/0))},
 Yw(a,b,c,d,e,f,g){var s,r=null,q=A.cX(b,r,r,20)
 if(c)s=A.et(r,r,r,A.cX(e?B.a15:B.a16,r,r,20),r,r,f,r,r,r,r)
 else s=r
@@ -57818,7 +57818,7 @@ A.dy(s,s,!0,s,new A.aOV(this),r,s,!0,t.z)},
 I(a){var s,r,q,p,o,n,m=this,l=null,k="President"
 if(m.r)return B.Q6
 s=m.w
-if(s==null)return A.ax2(l,A.ew(A.at(A.b([B.a3_,B.ck,B.b8s,B.ck,A.f5(B.b9E,m.ga25(),l)],t.p),B.J,B.c_,B.E,0,B.M),l,l))
+if(s==null)return A.ax2(l,A.ew(A.at(A.b([B.a3_,B.ck,B.b8t,B.ck,A.f5(B.b9E,m.ga25(),l)],t.p),B.J,B.c_,B.E,0,B.M),l,l))
 r=m.e
 q=m.f
 s.h(0,"name")
@@ -58030,7 +58030,7 @@ r=A.b([A.at(A.b([A.a3("Welcome back, "+(m?"Adviser":"President")+"!",n,n,n,n,B.e
 if(m&&j>0)r.push(new A.S5(""+j+" New Proposals",n))
 r=A.aR(r,B.J,B.bS,B.E,0,n)
 q=A.aR(A.b([new A.Bp("Total GPOA Activities",B.l.j(l.length),B.rH,B.jn,new A.aOA(a),n),B.dX,new A.Bp("Awaiting Action",B.l.j(j),B.rN,B.hO,new A.aOB(a,m),n),B.dX,new A.Bp("Cleared/Ongoing",B.l.j(i),B.mk,B.dp,new A.aOC(a),n)],s),B.J,B.B,B.E,0,n)
-p=A.b([A.aR(A.b([B.b8U,B.er,A.dE(B.b8o,n,new A.aOD(a),n)],s),B.J,B.B,B.E,0,n),B.kQ],s)
+p=A.b([A.aR(A.b([B.b8U,B.er,A.dE(B.b8p,n,new A.aOD(a),n)],s),B.J,B.B,B.E,0,n),B.kQ],s)
 l=l.length
 if(l===0){l=A.aB(24)
 p.push(A.aJ(n,B.YY,B.N,n,new A.aI(B.F,n,A.eO(B.ee,1),l,n,n,B.V),n,n,n,B.a_H,n,n,1/0))}else{if(l>5)l=5
@@ -58106,7 +58106,7 @@ return A.my(h,h,A.aJ(h,A.fu(A.zn(k,i,n,l,r,h,q,p,m,d.h(0,f)!=null?A.ea(d.h(0,f))
 $S:67}
 A.a65.prototype={
 I(a){var s=null,r=A.aB(24),q=A.b([new A.bi(0,B.ak,B.S.b5(0.05),B.fd,15)],t.V),p=t.p
-return A.aJ(s,A.at(A.b([A.aR(A.b([A.aJ(s,B.a2x,B.N,s,new A.aI(B.ci.b5(0.1),s,s,s,s,s,B.cH),s,s,s,B.hV,s,s,s),B.eT,B.b8L],p),B.J,B.B,B.E,0,s),B.bU,B.b9H,B.dZ,B.b9w,B.cD,B.b9t,B.dZ,B.b8B,B.ZJ,A.aR(A.b([B.a1Z,B.dY,A.bg(A.a3("Standing is updated after every semester based on activity scores.",s,s,s,s,A.d_(s,s,B.dO,s,s,s,s,s,s,s,s,12,B.jM,s,s,s,1.4,!0,s,s,s,s,s,s,s,s),s,s,s),1)],p),B.J,B.B,B.E,0,s)],p),B.Y,B.B,B.E,0,B.M),B.N,s,new A.aI(B.F,s,s,r,q,s,B.V),s,s,s,B.cr,s,s,s)}}
+return A.aJ(s,A.at(A.b([A.aR(A.b([A.aJ(s,B.a2x,B.N,s,new A.aI(B.ci.b5(0.1),s,s,s,s,s,B.cH),s,s,s,B.hV,s,s,s),B.eT,B.b8L],p),B.J,B.B,B.E,0,s),B.bU,B.b9H,B.dZ,B.b9w,B.cD,B.b9t,B.dZ,B.b8C,B.ZJ,A.aR(A.b([B.a1Z,B.dY,A.bg(A.a3("Standing is updated after every semester based on activity scores.",s,s,s,s,A.d_(s,s,B.dO,s,s,s,s,s,s,s,s,12,B.jM,s,s,s,1.4,!0,s,s,s,s,s,s,s,s),s,s,s),1)],p),B.J,B.B,B.E,0,s)],p),B.Y,B.B,B.E,0,B.M),B.N,s,new A.aI(B.F,s,s,r,q,s,B.V),s,s,s,B.cr,s,s,s)}}
 A.Nu.prototype={
 al(){var s,r=t.s,q=A.b(["Makakalikasan and Extension","Convocation-Programs","Seminars and symposium","Religious activities","Tangible Projects","Sports and Socio-cultural act"],r),p=A.b(["SDG 1: No Poverty","SDG 2: Zero Hunger","SDG 3: Good Health and Well-being","SDG 4: Quality Education","SDG 5: Gender Equality","SDG 6: Clean Water and Sanitation","SDG 7: Affordable and Clean Energy","SDG 8: Decent Work and Economic Growth","SDG 9: Industry, Innovation and Infrastructure","SDG 10: Reduced Inequality","SDG 11: Sustainable Cities and Communities","SDG 12: Responsible Consumption and Production","SDG 13: Climate Action","SDG 14: Life Below Water","SDG 15: Life on Land","SDG 16: Peace, Justice and Strong Institutions","SDG 17: Partnerships for the Goals"],r),o=A.b([],r),n=A.b(["1st year Students","2nd Year Students","3rd Year Students","4th Year Students","Transferees","Officers and Mayors","Faculty Staffs","All Students","All student of CSU Lal-lo"],r),m=A.b([],r)
 r=A.b([],r)
@@ -58200,7 +58200,7 @@ k=A.aB(16)
 s=A.b([new A.bi(0,B.ak,B.a3.b5(0.3),B.kr,20)],t.V)
 r=p.as?o:p.gaDZ()
 q=A.eI(o,o,B.a3,o,o,o,0,o,o,B.F,o,o,o,o,new A.c4(A.aB(16),B.U),o,o,o,o,o)
-return A.fu(A.at(A.b([m,B.hm,A.ajk(o,A.at(A.b([l,B.bU,i,B.bU,j,B.bU,h,B.hn,A.aJ(o,A.f5(p.as?B.b1o:B.b89,r,q),B.N,o,new A.aI(o,o,o,k,s,o,B.V),o,64,o,o,o,o,1/0),B.b1p],n),B.Y,B.B,B.E,0,B.M),p.d)],n),B.Y,B.B,B.E,0,B.M),o,B.a7,B.cr,o,o,B.ao)},
+return A.fu(A.at(A.b([m,B.hm,A.ajk(o,A.at(A.b([l,B.bU,i,B.bU,j,B.bU,h,B.hn,A.aJ(o,A.f5(p.as?B.b1o:B.b8a,r,q),B.N,o,new A.aI(o,o,o,k,s,o,B.V),o,64,o,o,o,o,1/0),B.b1p],n),B.Y,B.B,B.E,0,B.M),p.d)],n),B.Y,B.B,B.E,0,B.M),o,B.a7,B.cr,o,o,B.ao)},
 Ez(a,b,c){var s=null,r=A.aB(24),q=A.b([new A.bi(0,B.ak,B.S.b5(0.03),B.Lm,20)],t.V),p=t.p
 return A.aJ(s,A.at(A.b([A.aR(A.b([A.cX(b,B.cZ,s,18),B.cC,A.a3(c,s,s,s,s,B.RN,s,s,s)],p),B.J,B.B,B.E,0,s),B.cD,a],p),B.Y,B.B,B.E,0,B.M),B.N,s,new A.aI(B.F,s,s,r,q,s,B.V),s,s,s,B.cr,s,s,1/0)},
 Yy(a,b,c,d,e){var s,r,q=null,p=A.a3(c,q,q,q,q,B.RB,q,q,q),o=A.aB(12),n=A.eO(B.hP,1),m=A.aB(12),l=A.cX(b,B.bd,q,20)
@@ -58216,7 +58216,7 @@ am9(a,b,c,d){return this.Mk(a,b,c,d,1)},
 Ey(a,b,c,d){return this.Mk(a,b,c,!1,d)}}
 A.aKF.prototype={
 $1(a){var s=null
-return A.fl(A.b([A.dE(B.c3,s,new A.aKD(a),s),A.f5(B.b8q,new A.aKE(a),A.eI(s,s,B.a3,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s))],t.p),B.b96,B.RV)},
+return A.fl(A.b([A.dE(B.c3,s,new A.aKD(a),s),A.f5(B.b8r,new A.aKE(a),A.eI(s,s,B.a3,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s))],t.p),B.b96,B.RV)},
 $S:19}
 A.aKD.prototype={
 $0(){A.bG(this.a,!1).bI(!1)
@@ -58306,7 +58306,7 @@ A.aKu.prototype={
 $2(a,b){var s=null,r=this.a,q=r.x,p=A.W(q).i("a_<1,mr>")
 r=A.L(new A.a_(q,new A.aKs(r,b),p),p.i("al.E"))
 r=A.d6(A.fu(A.at(r,B.J,B.B,B.aC,0,B.M),s,B.a7,s,s,s,B.ao),s,450)
-return A.fl(A.b([A.dE(B.vz,s,new A.aKt(a),s)],t.p),r,B.b81)},
+return A.fl(A.b([A.dE(B.vz,s,new A.aKt(a),s)],t.p),r,B.b82)},
 $S:115}
 A.aKs.prototype={
 $1(a){var s=null,r=this.a,q=B.m.n(r.z,a)
@@ -58375,7 +58375,7 @@ s=n.length
 return new A.aF(B.cr,A.at(A.b([p,o,B.cD,A.bg(s===0?B.WN:A.om(r,new A.aOr(this,n,q),s,r,r,!1),1)],t.p),B.Y,B.B,B.E,0,B.M),r)},
 am2(a,b,c){var s,r,q,p=this,o="status",n=null,m=t.s
 if(B.m.n(A.b(["Approved","Awaiting Date Approval","Needs Revision"],m),b.h(0,o))){s=A.b([],t.p)
-if(J.c(b.h(0,o),"Needs Revision"))s.push(new A.aF(B.a_n,A.mD(B.a2X,B.b7Z,new A.aOe(p,a,b,c),A.eI(n,n,B.ci,n,n,n,n,n,n,B.F,n,n,n,n,n,n,n,n,n,n)),n))
+if(J.c(b.h(0,o),"Needs Revision"))s.push(new A.aF(B.a_n,A.mD(B.a2X,B.b8_,new A.aOe(p,a,b,c),A.eI(n,n,B.ci,n,n,n,n,n,n,B.F,n,n,n,n,n,n,n,n,n,n)),n))
 s.push(A.et(n,n,n,B.a2E,n,n,new A.aOf(p,a,b,c),n,n,n,n))
 if(B.m.n(A.b(["Approved","Needs Revision"],m),b.h(0,o)))s.push(A.mD(B.a2j,B.RT,new A.aOg(p,a,b,c),A.eI(n,n,B.a3,n,n,n,n,n,n,B.F,n,n,n,n,n,n,n,n,n,n)))
 else s.push(A.aJ(n,B.b9l,B.N,n,new A.aI(B.ci.b5(0.1),n,n,A.aB(20),n,n,B.V),n,n,n,B.yp,n,n,n))
@@ -58526,7 +58526,7 @@ $2(a,b){var s,r,q="proposed_date",p=null,o="Scheduled",n=this.b[b],m=n.h(0,"stat
 h=A.aJ(p,A.cX(f,i.k(m,o)?B.c9:B.bT,p,p),B.N,p,new A.aI(h,p,p,g,p,p,B.V),p,p,p,B.dR,p,p,p)
 g=A.a3(n.h(0,"title"),p,p,p,p,B.vx,p,p,p)
 f=t.p
-s=A.aR(A.b([B.b8z,new A.ng(m,p)],f),B.J,B.B,B.E,0,p)
+s=A.aR(A.b([B.b8A,new A.ng(m,p)],f),B.J,B.B,B.E,0,p)
 i=l?"Date & Time: "+A.ea(n.h(0,q)):"Date & Time: Not selected"
 r=this.a
 f=A.b([h,B.kP,A.bg(A.at(A.b([g,s,A.a3(i,p,p,p,p,A.d_(p,p,l?B.aW:B.dc,p,p,p,p,p,p,p,p,13,p,p,p,p,p,!0,p,p,p,p,p,p,p,p),p,p,p)],f),B.Y,B.B,B.E,0,B.M),1),A.et(p,p,p,B.a29,p,p,new A.aOp(r,a,n),p,p,p,p)],f)
@@ -58584,7 +58584,7 @@ $0(){var s=this
 return s.a.wj(s.b,s.c,s.d)},
 $S:0}
 A.aOk.prototype={
-$1(a){var s,r,q,p,o,n,m,l,k,j,i,h=null,g="Not specified",f="proposed_date",e=t.p,d=A.aR(A.b([B.b8d,A.et(h,h,h,B.rP,h,h,new A.aOj(a),h,h,h,h)],e),B.J,B.bS,B.E,0,h),c=this.a,b=c.h(0,"title")
+$1(a){var s,r,q,p,o,n,m,l,k,j,i,h=null,g="Not specified",f="proposed_date",e=t.p,d=A.aR(A.b([B.b8e,A.et(h,h,h,B.rP,h,h,new A.aOj(a),h,h,h,h)],e),B.J,B.bS,B.E,0,h),c=this.a,b=c.h(0,"title")
 if(b==null)b="Untitled"
 s=c.h(0,"sdgs")
 if(s==null)s=g
@@ -58623,7 +58623,7 @@ n.push(A.aJ(p,A.a3("Feedback: "+A.i(m.h(0,"remarks")),p,p,p,p,p,p,p,p),B.N,p,new
 s=A.k(l).i("ez<1,2>")
 B.m.P(n,A.lB(new A.ez(l,s),new A.aOl(),s.i("o.E"),t.l7))
 n=A.fu(A.at(n,B.J,B.B,B.aC,0,B.M),p,B.a7,p,p,p,B.ao)
-return A.fl(A.b([A.dE(B.c3,p,new A.aOm(a),p),A.f5(B.b9f,new A.aOn(l,m,a,q.c,q.d),p)],o),n,B.b83)},
+return A.fl(A.b([A.dE(B.c3,p,new A.aOm(a),p),A.f5(B.b9f,new A.aOn(l,m,a,q.c,q.d),p)],o),n,B.b84)},
 $S:19}
 A.aOl.prototype={
 $1(a){var s=null,r=a.a,q=A.zJ(s,s,s,s,s,s,s,s,!0,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,r,!0,!0,!1,s,s,s,s,s,s,s,s,s,s,s,s,s,s)
@@ -58664,7 +58664,7 @@ $S:8}
 A.a4u.prototype={
 I(a){var s=null,r=this.c,q=A.W(r).i("ah<1>"),p=A.L(new A.ah(r,new A.aK4(),q),q.i("o.E"))
 r=p.length
-return new A.aF(B.cr,A.at(A.b([B.b8P,B.b7Y,B.cD,A.bg(r===0?B.WI:A.om(s,new A.aK5(this,p),r,s,s,!1),1)],t.p),B.Y,B.B,B.E,0,B.M),s)},
+return new A.aF(B.cr,A.at(A.b([B.b8P,B.b7Z,B.cD,A.bg(r===0?B.WI:A.om(s,new A.aK5(this,p),r,s,s,!1),1)],t.p),B.Y,B.B,B.E,0,B.M),s)},
 GX(a,b,c){return this.aFJ(a,b,c)},
 aFJ(a,b,c){var s=0,r=A.y(t.H),q=1,p=[],o=this,n,m,l,k,j
 var $async$GX=A.u(function(d,e){if(d===1){p.push(e)
@@ -58774,7 +58774,7 @@ return null},
 $S:0}
 A.aK2.prototype={
 $1(a){var s=null
-return A.fl(A.b([A.dE(B.c3,s,new A.aJY(a),s),A.f5(B.b8v,new A.aJZ(a),A.eI(s,s,B.c9,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s))],t.p),B.b87,B.b93)},
+return A.fl(A.b([A.dE(B.c3,s,new A.aJY(a),s),A.f5(B.b8w,new A.aJZ(a),A.eI(s,s,B.c9,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s))],t.p),B.b88,B.b93)},
 $S:19}
 A.aJY.prototype={
 $0(){A.bG(this.a,!1).bI(!1)
@@ -58919,7 +58919,7 @@ o=A.cX(o,q?B.c9:B.ci,l,16)
 n=q?k:"Submitted"
 o=A.b([A.aR(A.b([o,B.oN,A.a3(n,l,l,l,l,A.d_(l,l,q?B.c9:B.ci,l,l,l,l,l,l,l,l,12,l,l,B.aE,l,l,!0,l,l,l,l,l,l,l,l),l,l,l),B.er,A.et(l,l,l,B.a26,l,l,new A.aTb(h),l,l,l,l)],i),B.J,B.B,B.E,0,l)],i)
 if(m.d&&!q){n=m.a
-o.push(A.aR(A.b([A.bg(A.f5(B.b9h,new A.aTc(n,h),A.eI(l,l,B.c9,l,l,l,l,l,l,B.F,l,l,B.b2,l,l,l,l,l,l,l)),1),B.oN,A.bg(new A.Ij(!1,new A.aTd(n,h),l,l,l,A.arc(l,l,l,l,l,l,l,l,l,B.dc,l,l,B.b2,l,l,B.Uc,l,l,l,l),l,l,!1,l,!0,l,B.b8E,l),1)],i),B.J,B.B,B.E,0,l))}B.m.P(p,o)}else p.push(B.b86)
+o.push(A.aR(A.b([A.bg(A.f5(B.b9h,new A.aTc(n,h),A.eI(l,l,B.c9,l,l,l,l,l,l,B.F,l,l,B.b2,l,l,l,l,l,l,l)),1),B.oN,A.bg(new A.Ij(!1,new A.aTd(n,h),l,l,l,A.arc(l,l,l,l,l,l,l,l,l,B.dc,l,l,B.b2,l,l,B.Uc,l,l,l,l),l,l,!1,l,!0,l,B.b8F,l),1)],i),B.J,B.B,B.E,0,l))}B.m.P(p,o)}else p.push(B.b87)
 if(!m.d&&!q)p.push(A.mD(B.a1W,A.a3(s?"Update":"Upload",l,l,l,l,l,l,l,l),new A.aTe(m.a,a,j),A.eI(l,l,B.bT,l,l,l,l,l,l,B.F,l,l,l,l,l,l,l,l,l,l)))
 return A.aey(new A.aF(B.fO,A.at(p,B.Y,B.B,B.E,0,B.M),l),l,l,l)},
 $S:161}
@@ -58961,7 +58961,7 @@ I(a){var s=this,r=null,q=s.c,p=A.W(q).i("ah<1>"),o=p.i("o.E"),n=A.L(new A.ah(q,n
 q=A.aB(16)
 p=A.b([new A.bi(0,B.ak,B.S.b5(0.03),B.G,10)],t.V)
 o=t.p
-return A.afS(new A.aF(B.d_,A.at(A.b([B.b9L,B.b8I,B.bU,A.aJ(r,A.aAX(B.a9,new A.aI(B.a3,r,r,A.aB(12),r,r,B.V),B.oR,!0,B.F,A.b([A.rD(new A.aF(B.cM,A.a3("Phase 1: Scheduling ("+n.length+")",r,r,r,r,B.oX,r,r,r),r)),A.rD(new A.aF(B.cM,A.a3("Phase 2: Review ("+m.length+")",r,r,r,r,B.oX,r,r,r),r)),A.rD(new A.aF(B.cM,A.a3("Phase 3: Ongoing ("+l.length+")",r,r,r,r,B.oX,r,r,r),r)),A.rD(new A.aF(B.cM,A.a3("Phase 4: Completed ("+k.length+")",r,r,r,r,B.oX,r,r,r),r))],o),B.bd),B.N,r,new A.aI(B.F,r,r,q,p,r,B.V),r,r,r,B.jH,r,r,r),B.bU,A.bg(A.aAY(A.b([s.pE(n,"No approved GPOAs awaiting schedule."),s.pE(m,"No dates awaiting Admin approval."),s.pE(l,"No ongoing activities."),s.pE(k,"No completed activities.")],o)),1)],o),B.Y,B.B,B.E,0,B.M),r),4)},
+return A.afS(new A.aF(B.d_,A.at(A.b([B.b7Y,B.b9M,B.bU,A.aJ(r,A.aAX(B.a9,new A.aI(B.a3,r,r,A.aB(12),r,r,B.V),B.oR,!0,B.F,A.b([A.rD(new A.aF(B.cM,A.a3("For Scheduling ("+n.length+")",r,r,r,r,B.oX,r,r,r),r)),A.rD(new A.aF(B.cM,A.a3("Awaiting Approval ("+m.length+")",r,r,r,r,B.oX,r,r,r),r)),A.rD(new A.aF(B.cM,A.a3("Ongoing Events ("+l.length+")",r,r,r,r,B.oX,r,r,r),r)),A.rD(new A.aF(B.cM,A.a3("Completed ("+k.length+")",r,r,r,r,B.oX,r,r,r),r))],o),B.bd),B.N,r,new A.aI(B.F,r,r,q,p,r,B.V),r,r,r,B.jH,r,r,r),B.bU,A.bg(A.aAY(A.b([s.pE(n,"No approved GPOAs awaiting schedule."),s.pE(m,"No dates awaiting Admin approval."),s.pE(l,"No ongoing activities."),s.pE(k,"No completed activities.")],o)),1)],o),B.Y,B.B,B.E,0,B.M),r),4)},
 pE(a,b){var s=null,r=a.length
 if(r===0)return A.ew(A.a3(b,s,s,s,s,B.fk,s,s,s),s,s)
 return A.GM(s,B.a7,B.R7,new A.aPv(a),r,s)}}
@@ -58983,9 +58983,9 @@ $S:166}
 A.a4v.prototype={
 I(a){var s,r=this,q=null,p=r.c,o=A.W(p).i("ah<1>"),n=o.i("o.E"),m=A.L(new A.ah(p,new A.aK9(),o),n),l=A.L(new A.ah(p,new A.aKa(),o),n),k=A.L(new A.ah(p,new A.aKb(),o),n)
 p=t.p
-o=A.at(A.b([B.b9B,B.b8n],p),B.Y,B.B,B.E,0,B.M)
+o=A.at(A.b([B.b9B,B.b8o],p),B.Y,B.B,B.E,0,B.M)
 n=A.b([],p)
-if(r.e!=="Adviser")n.push(A.mD(B.a2a,B.b84,new A.aKc(r),A.eI(q,q,B.a3,q,q,q,q,q,q,B.F,q,q,B.yq,q,new A.c4(A.aB(12),B.U),q,q,q,q,q)))
+if(r.e!=="Adviser")n.push(A.mD(B.a2a,B.b85,new A.aKc(r),A.eI(q,q,B.a3,q,q,q,q,q,q,B.F,q,q,B.yq,q,new A.c4(A.aB(12),B.U),q,q,q,q,q)))
 n.push(B.cC)
 n.push(A.b_3(B.a2g,B.RW,new A.aKd(r),A.arc(q,q,q,q,q,q,q,q,q,B.a3,q,q,B.yq,q,new A.c4(A.aB(12),B.U),B.U9,q,q,q,q)))
 o=A.aR(A.b([o,A.aR(n,B.J,B.B,B.E,0,q)],p),B.J,B.bS,B.E,0,q)
@@ -59076,8 +59076,8 @@ i=A.ea(d.h(0,"created_at"))
 return A.my(h,h,A.aJ(h,A.fu(A.zn(k,i,n,l,r,h,q,p,m,d.h(0,f)!=null?A.ea(d.h(0,f)):h,s,j,o,c),h,B.a7,h,h,h,B.ao),B.N,h,h,h,h,h,B.cr,h,h,1000),h,h,h,h,B.ep,h,new A.c4(e,B.U),h)},
 $S:67}
 A.a4s.prototype={
-I(a){var s=null,r=A.b7p(B.zA,B.b8j,this.f,A.BH(s,s,s,s,s,s,s,s,s,B.a3,s,s,s,s,s,s,s,s,s,s)),q=A.aB(28),p=A.b([new A.bi(0,B.ak,B.S.b5(0.05),B.G,20)],t.V),o=this.d,n=t.p
-return new A.aF(B.d_,A.at(A.b([new A.ep(B.j3,s,s,r,s),B.kQ,A.ew(A.aJ(s,A.at(A.b([A.aJ(s,A.at(A.b([B.a2I,B.cD,B.b9d,B.eq,B.b9z,B.hm,A.aR(A.b([A.bg(new A.PY("TOTAL ACTIVITIES",B.l.j(o.length),B.rH,s),1),B.kP,A.bg(new A.PY("READY FOR PRINT",B.l.j(new A.ah(o,new A.aJO(),A.W(o).i("ah<1>")).gv(0)),B.mh,s),1)],n),B.J,B.B,B.E,0,s),B.hm,A.d6(A.mD(B.a2B,B.b8_,new A.aJP(this,a),A.eI(s,s,B.a3,s,s,s,0,s,s,B.F,s,s,s,s,new A.c4(A.aB(16),B.U),s,s,s,s,s)),56,1/0)],n),B.J,B.B,B.E,0,B.M),B.N,s,new A.aI(B.F,s,s,q,p,s,B.V),s,s,s,B.d_,s,s,s)],n),B.J,B.c_,B.E,0,B.M),B.N,B.Us,s,s,s,s,s,s,s,s),s,s)],n),B.J,B.B,B.E,0,B.M),s)},
+I(a){var s=null,r=A.b7p(B.zA,B.b8k,this.f,A.BH(s,s,s,s,s,s,s,s,s,B.a3,s,s,s,s,s,s,s,s,s,s)),q=A.aB(28),p=A.b([new A.bi(0,B.ak,B.S.b5(0.05),B.G,20)],t.V),o=this.d,n=t.p
+return new A.aF(B.d_,A.at(A.b([new A.ep(B.j3,s,s,r,s),B.kQ,A.ew(A.aJ(s,A.at(A.b([A.aJ(s,A.at(A.b([B.a2I,B.cD,B.b9d,B.eq,B.b9z,B.hm,A.aR(A.b([A.bg(new A.PY("TOTAL ACTIVITIES",B.l.j(o.length),B.rH,s),1),B.kP,A.bg(new A.PY("READY FOR PRINT",B.l.j(new A.ah(o,new A.aJO(),A.W(o).i("ah<1>")).gv(0)),B.mh,s),1)],n),B.J,B.B,B.E,0,s),B.hm,A.d6(A.mD(B.a2B,B.b80,new A.aJP(this,a),A.eI(s,s,B.a3,s,s,s,0,s,s,B.F,s,s,s,s,new A.c4(A.aB(16),B.U),s,s,s,s,s)),56,1/0)],n),B.J,B.B,B.E,0,B.M),B.N,s,new A.aI(B.F,s,s,q,p,s,B.V),s,s,s,B.d_,s,s,s)],n),B.J,B.c_,B.E,0,B.M),B.N,B.Us,s,s,s,s,s,s,s,s),s,s)],n),B.J,B.B,B.E,0,B.M),s)},
 Od(a){return this.auI(a)},
 auI(a){var s=0,r=A.y(t.H),q=this,p,o,n
 var $async$Od=A.u(function(b,c){if(b===1)return A.v(c,r)
@@ -59224,7 +59224,7 @@ B.m.P(p,n)}p=A.bg(new A.OG("Leadership",B.a0O,A.at(p,B.J,B.B,B.E,0,B.M),h),1)
 n=i.r
 n=A.b([A.aR(A.b([A.bg(new A.PS("ACCOMPLISHED",B.l.j(n.length),B.a0W,B.c9,h),1),B.eT,A.bg(new A.PS("POINTS",B.n.ao(B.m.nP(n,0,new A.aPi()),2),B.a0U,B.ci,h),1)],l),B.J,B.B,B.E,0,h),B.bU,B.Tu,B.eq],l)
 m=i.r
-if(m.length===0)n.push(B.b8b)
+if(m.length===0)n.push(B.b8c)
 else{m=A.fZ(m,0,A.k2(5,"count",t.S),A.W(m).c)
 B.m.P(n,new A.a_(m,new A.aPj(),m.$ti.i("a_<al.E,e>")))}return A.fu(A.ew(A.aJ(h,A.at(A.b([o,B.bU,A.aR(A.b([p,B.oM,A.bg(new A.OG("Performance",B.a1_,A.at(n,B.J,B.B,B.E,0,B.M),h),1)],l),B.Y,B.B,B.E,0,h)],l),B.J,B.B,B.E,0,B.M),B.N,B.Ur,h,h,h,h,h,h,h,h),h,h),h,B.a7,B.cr,h,h,B.ao)}}
 A.aOZ.prototype={
@@ -59269,7 +59269,7 @@ return A.x($async$$0,r)},
 $S:8}
 A.aP5.prototype={
 $1(a){var s=null,r=A.a3("Are you sure you want to remove "+A.i(this.a.h(0,"full_name"))+" from the list?",s,s,s,s,s,s,s,s)
-return A.fl(A.b([A.dE(B.c3,s,new A.aP3(a),s),A.f5(B.b9D,new A.aP4(a),A.eI(s,s,B.dc,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s))],t.p),r,B.b8h)},
+return A.fl(A.b([A.dE(B.c3,s,new A.aP3(a),s),A.f5(B.b9D,new A.aP4(a),A.eI(s,s,B.dc,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s,s))],t.p),r,B.b8i)},
 $S:19}
 A.aP3.prototype={
 $0(){A.bG(this.a,!1).bI(!1)
@@ -59312,7 +59312,7 @@ $S:8}
 A.aP2.prototype={
 $1(a){var s="[a-zA-Z\\s]",r=null,q=this.b,p=t.VS,o=this.c,n=t.p
 p=A.at(A.b([A.it(r,B.bZ,!1,r,!0,B.al,r,A.jg(),q,r,r,r,r,r,2,B.a3q,B.a7,!0,r,!0,r,!1,r,B.bW,r,r,A.b([new A.uw(A.cF(s,!0,!1),!0,"")],p),r,r,r,r,r,1,r,r,!1,"\u2022",r,r,r,r,r,!1,r,r,!1,r,!0,r,B.c7,r,r,r,r,r,r,r,r,r,r,r,r,!0,B.aP,r,B.cE,r,r,r,r),A.it(r,B.bZ,!1,r,!0,B.al,r,A.jg(),o,r,r,r,r,r,2,B.a3v,B.a7,!0,r,!0,r,!1,r,B.bW,r,r,A.b([new A.uw(A.cF(s,!0,!1),!0,"")],p),r,r,r,r,r,1,r,r,!1,"\u2022",r,r,r,r,r,!1,r,r,!1,r,!0,r,B.c7,r,r,r,r,r,r,r,r,r,r,r,r,!0,B.aP,r,B.cE,r,r,r,r)],n),B.J,B.B,B.aC,0,B.M)
-return A.fl(A.b([A.dE(B.c3,r,new A.aP0(a),r),A.f5(B.b8x,new A.aP1(this.a,q,o,a),r)],n),p,B.b8w)},
+return A.fl(A.b([A.dE(B.c3,r,new A.aP0(a),r),A.f5(B.b8y,new A.aP1(this.a,q,o,a),r)],n),p,B.b8x)},
 $S:19}
 A.aP0.prototype={
 $0(){A.bG(this.a,!1).bI(null)
@@ -135168,14 +135168,14 @@ B.cZ=new A.C(1,0.5803921568627451,0.6392156862745098,0.7215686274509804,B.A)
 B.b6i=new A.r(!0,B.cZ,null,null,null,null,13,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
 B.b95=new A.ac("No completed activities yet.",null,B.b6i,null,null,null,null,null,null,null,null)
 B.WG=new A.es(B.an,null,null,B.b95,null)
-B.b8i=new A.ac("No organizations found.",null,null,null,null,null,null,null,null,null,null)
-B.xg=new A.es(B.an,null,null,B.b8i,null)
-B.b8l=new A.ac("Rankings coming soon.",null,null,null,null,null,null,null,null,null,null)
-B.WH=new A.es(B.an,null,null,B.b8l,null)
+B.b8j=new A.ac("No organizations found.",null,null,null,null,null,null,null,null,null,null)
+B.xg=new A.es(B.an,null,null,B.b8j,null)
+B.b8m=new A.ac("Rankings coming soon.",null,null,null,null,null,null,null,null,null,null)
+B.WH=new A.es(B.an,null,null,B.b8m,null)
 B.b94=new A.ac("No activities in review.",null,null,null,null,null,null,null,null,null,null)
 B.WI=new A.es(B.an,null,null,B.b94,null)
-B.b88=new A.ac("No activities require reports.",null,null,null,null,null,null,null,null,null,null)
-B.WJ=new A.es(B.an,null,null,B.b88,null)
+B.b89=new A.ac("No activities require reports.",null,null,null,null,null,null,null,null,null,null)
+B.WJ=new A.es(B.an,null,null,B.b89,null)
 B.b8S=new A.ac("No activities currently require reports.",null,null,null,null,null,null,null,null,null,null)
 B.WK=new A.es(B.an,null,null,B.b8S,null)
 B.b8Y=new A.ac("No user accounts found.",null,null,null,null,null,null,null,null,null,null)
@@ -135188,8 +135188,8 @@ B.YQ=new A.jn(B.ao,B.c_,B.E,B.J,null,B.M,null,0,B.aMA,null)
 B.WM=new A.es(B.an,null,null,B.YQ,null)
 B.b9a=new A.ac("No activities ready for scheduling.",null,null,null,null,null,null,null,null,null,null)
 B.WN=new A.es(B.an,null,null,B.b9a,null)
-B.b8t=new A.ac("Profile Settings coming soon.",null,null,null,null,null,null,null,null,null,null)
-B.WO=new A.es(B.an,null,null,B.b8t,null)
+B.b8u=new A.ac("Profile Settings coming soon.",null,null,null,null,null,null,null,null,null,null)
+B.WO=new A.es(B.an,null,null,B.b8u,null)
 B.q6=new A.hR(0,"close")
 B.q7=new A.hR(1,"error")
 B.xh=new A.hR(2,"join")
@@ -135343,10 +135343,10 @@ B.Y=new A.u9(0,"start")
 B.ed=new A.C(1,0.058823529411764705,0.09019607843137255,0.16470588235294117,B.A)
 B.d0=new A.iS(900)
 B.e1=new A.r(!0,B.ed,null,null,null,null,32,B.d0,null,-1,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
-B.b8k=new A.ac("Proposal Review Center",null,B.e1,null,null,null,null,null,null,null,null)
+B.b8l=new A.ac("Proposal Review Center",null,B.e1,null,null,null,null,null,null,null,null)
 B.ho=new A.r(!0,B.bd,null,null,null,null,16,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
 B.b8T=new A.ac("Evaluate and endorse student organization General Plan of Activities (GPOA).",null,B.ho,null,null,null,null,null,null,null,null)
-B.aNh=s([B.b8k,B.b8T],t.p)
+B.aNh=s([B.b8l,B.b8T],t.p)
 B.YS=new A.jn(B.ao,B.B,B.E,B.Y,null,B.M,null,0,B.aNh,null)
 B.b75=new A.r(!0,B.ed,null,null,null,null,28,B.d0,null,-0.5,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
 B.b9N=new A.ac("Submit GPOA Activity",null,B.b75,null,null,null,null,null,null,null,null)
@@ -135356,22 +135356,22 @@ B.b9K=new A.ac("Draft a new activity proposal for your organization.",null,B.b42
 B.aMu=s([B.b9N,B.b9K],t.p)
 B.YT=new A.jn(B.ao,B.B,B.E,B.Y,null,B.M,null,0,B.aMu,null)
 B.b5A=new A.r(!0,B.ed,null,null,null,null,24,B.d0,null,-1,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
-B.b8g=new A.ac("GPOA Report Preview",null,B.b5A,null,null,null,null,null,null,null,null)
+B.b8h=new A.ac("GPOA Report Preview",null,B.b5A,null,null,null,null,null,null,null,null)
 B.b5i=new A.r(!0,B.bd,null,null,null,null,14,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
 B.b9C=new A.ac("Standard Folio (Long Bond Paper) 8.5x13in Layout.",null,B.b5i,null,null,null,null,null,null,null,null)
-B.aN6=s([B.b8g,B.b9C],t.p)
+B.aN6=s([B.b8h,B.b9C],t.p)
 B.YU=new A.jn(B.ao,B.B,B.E,B.Y,null,B.M,null,0,B.aN6,null)
 B.fJ=new A.u9(1,"end")
 B.bN=new A.iS(800)
 B.b4j=new A.r(!0,B.ed,null,null,null,null,14,B.bN,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
 B.b9O=new A.ac("Admin User",null,B.b4j,null,null,null,null,null,null,null,null)
 B.b3k=new A.r(!0,B.bd,null,null,null,null,11,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
-B.b9M=new A.ac("System Administrator",null,B.b3k,null,null,null,null,null,null,null,null)
-B.aS9=s([B.b9O,B.b9M],t.p)
+B.b9L=new A.ac("System Administrator",null,B.b3k,null,null,null,null,null,null,null,null)
+B.aS9=s([B.b9O,B.b9L],t.p)
 B.YV=new A.jn(B.ao,B.c_,B.E,B.fJ,null,B.M,null,0,B.aS9,null)
-B.b8y=new A.ac("Event Scheduling",null,B.e1,null,null,null,null,null,null,null,null)
+B.b8z=new A.ac("Event Scheduling",null,B.e1,null,null,null,null,null,null,null,null)
 B.b9k=new A.ac("Manage proposed event dates and oversee activity timelines.",null,B.ho,null,null,null,null,null,null,null,null)
-B.aPV=s([B.b8y,B.b9k],t.p)
+B.aPV=s([B.b8z,B.b9k],t.p)
 B.YW=new A.jn(B.ao,B.B,B.E,B.Y,null,B.M,null,0,B.aPV,null)
 B.a13=new A.ak(61748,"MaterialIcons",!1)
 B.xr=new A.C(1,0.796078431372549,0.8352941176470589,0.8823529411764706,B.A)
@@ -141906,8 +141906,8 @@ B.b1y=new A.nf(3,"hide")
 B.beW=new A.nf(4,"remove")
 B.b1z=new A.nf(5,"timeout")
 B.b1A=new A.Bj(null,null,null,null,null,null,null,null,null,null,null,null,null,null)
-B.b8f=new A.ac("Select a date first.",null,null,null,null,null,null,null,null,null,null)
-B.b1B=new A.wJ(B.b8f,null,null,null,null,null,null,null,null,null,null,null,null,B.qP,!1,null,null,null,B.al,null)
+B.b8g=new A.ac("Select a date first.",null,null,null,null,null,null,null,null,null,null)
+B.b1B=new A.wJ(B.b8g,null,null,null,null,null,null,null,null,null,null,null,null,B.qP,!1,null,null,null,B.al,null)
 B.Rd=new A.KH(0,"permissive")
 B.b1C=new A.KH(1,"normal")
 B.b1D=new A.KH(2,"forced")
@@ -141968,8 +141968,8 @@ B.b25=new A.BD(null,null,null,null,null,null,null,null,null,null,null,null,null,
 B.b26=new A.a07(0,"linear")
 B.b27=new A.a07(1,"elastic")
 B.a2N=new A.b1(B.i8,18,null,null,null)
-B.b85=new A.ac("Organizations Schedule",null,B.c2,null,null,null,null,null,null,null,null)
-B.aC8=s([B.a2N,B.dY,B.b85],t.p)
+B.b86=new A.ac("Organizations Schedule",null,B.c2,null,null,null,null,null,null,null,null)
+B.aC8=s([B.a2N,B.dY,B.b86],t.p)
 B.aZX=new A.nb(B.bb,B.c_,B.E,B.J,null,B.M,null,0,B.aC8,null)
 B.b28=new A.BB(B.aZX,null)
 B.a2C=new A.b1(B.zl,18,null,null,null)
@@ -142379,55 +142379,55 @@ B.b7V=new A.fw(B.b5f,B.b3T,B.b5g,B.b5P,B.b3v,B.b3F,B.b4g,B.b5K,B.b4u,B.b6l,B.b2U
 B.b7W=new A.ac("Sustainable Development Goals (SDGs) Addressed",null,B.RB,null,null,null,null,null,null,null,null)
 B.RS=new A.ac("Delete",null,null,null,null,null,null,null,null,null,null)
 B.RT=new A.ac("Submit",null,null,null,null,null,null,null,null,null,null)
-B.b7Y=new A.ac("Endorse proposals or track revisions.",null,B.fk,null,null,null,null,null,null,null,null)
-B.b7Z=new A.ac("Revise",null,null,null,null,null,null,null,null,null,null)
+B.b7Y=new A.ac("Activity Progress Tracker",null,B.e1,null,null,null,null,null,null,null,null)
+B.b7Z=new A.ac("Endorse proposals or track revisions.",null,B.fk,null,null,null,null,null,null,null,null)
+B.b8_=new A.ac("Revise",null,null,null,null,null,null,null,null,null,null)
 B.b2L=new A.r(!0,null,null,null,null,null,null,B.aE,null,1,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
-B.b8_=new A.ac("GENERATE AND PRINT PDF",null,B.b2L,null,null,null,null,null,null,null,null)
-B.b80=new A.ac("Officers:",null,B.c2,null,null,null,null,null,null,null,null)
-B.b81=new A.ac("Select Persons Involved",null,null,null,null,null,null,null,null,null,null)
+B.b80=new A.ac("GENERATE AND PRINT PDF",null,B.b2L,null,null,null,null,null,null,null,null)
+B.b81=new A.ac("Officers:",null,B.c2,null,null,null,null,null,null,null,null)
+B.b82=new A.ac("Select Persons Involved",null,null,null,null,null,null,null,null,null,null)
 B.c3=new A.ac("Cancel",null,null,null,null,null,null,null,null,null,null)
-B.b82=new A.ac("Explain why this date cannot be approved:",null,null,null,null,null,null,null,null,null,null)
-B.b83=new A.ac("Revise Plan",null,null,null,null,null,null,null,null,null,null)
-B.b84=new A.ac("New Proposal",null,null,null,null,null,null,null,null,null,null)
-B.b86=new A.ac("Pending Submission",null,B.oY,null,null,null,null,null,null,null,null)
-B.b87=new A.ac("Are you sure you want to endorse this activity proposal?",null,null,null,null,null,null,null,null,null,null)
+B.b83=new A.ac("Explain why this date cannot be approved:",null,null,null,null,null,null,null,null,null,null)
+B.b84=new A.ac("Revise Plan",null,null,null,null,null,null,null,null,null,null)
+B.b85=new A.ac("New Proposal",null,null,null,null,null,null,null,null,null,null)
+B.b87=new A.ac("Pending Submission",null,B.oY,null,null,null,null,null,null,null,null)
+B.b88=new A.ac("Are you sure you want to endorse this activity proposal?",null,null,null,null,null,null,null,null,null,null)
 B.RU=new A.ac("Save",null,null,null,null,null,null,null,null,null,null)
 B.b5J=new A.r(!0,null,null,null,null,null,16,B.bN,null,1,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
-B.b89=new A.ac("SUBMIT ACTIVITY PROPOSAL",null,B.b5J,null,null,null,null,null,null,null,null)
-B.b8a=new A.ac("Send Feedback",null,null,null,null,null,null,null,null,null,null)
-B.b8b=new A.ac("No completed events yet.",null,B.vw,null,null,null,null,null,null,null,null)
-B.b8c=new A.ac("Edit User",null,null,null,null,null,null,null,null,null,null)
+B.b8a=new A.ac("SUBMIT ACTIVITY PROPOSAL",null,B.b5J,null,null,null,null,null,null,null,null)
+B.b8b=new A.ac("Send Feedback",null,null,null,null,null,null,null,null,null,null)
+B.b8c=new A.ac("No completed events yet.",null,B.vw,null,null,null,null,null,null,null,null)
+B.b8d=new A.ac("Edit User",null,null,null,null,null,null,null,null,null,null)
 B.b6K=new A.r(!0,null,null,null,null,null,20,B.aE,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
-B.b8d=new A.ac("Activity Details",null,B.b6K,null,null,null,null,null,null,null,null)
-B.b8e=new A.ac("GPOA Reports",null,B.e1,null,null,null,null,null,null,null,null)
-B.b8h=new A.ac("Remove Officer",null,null,null,null,null,null,null,null,null,null)
-B.b8j=new A.ac("Back to Manage GPOA",null,B.c2,null,null,null,null,null,null,null,null)
+B.b8e=new A.ac("Activity Details",null,B.b6K,null,null,null,null,null,null,null,null)
+B.b8f=new A.ac("GPOA Reports",null,B.e1,null,null,null,null,null,null,null,null)
+B.b8i=new A.ac("Remove Officer",null,null,null,null,null,null,null,null,null,null)
+B.b8k=new A.ac("Back to Manage GPOA",null,B.c2,null,null,null,null,null,null,null,null)
 B.vz=new A.ac("Close",null,null,null,null,null,null,null,null,null,null)
-B.b8m=new A.ac("Accomplishment Reports",null,B.e1,null,null,null,null,null,null,null,null)
-B.b8n=new A.ac("Monitor the approval life-cycle of your submitted GPOA activities.",null,B.ho,null,null,null,null,null,null,null,null)
-B.b8o=new A.ac("View All",null,null,null,null,null,null,null,null,null,null)
-B.b8p=new A.ac("Select an organization to generate and print their full General Plan of Activities.",null,B.ho,null,null,null,null,null,null,null,null)
-B.b8q=new A.ac("Confirm",null,null,null,null,null,null,null,null,null,null)
-B.b8r=new A.ac("Add User",null,null,null,null,null,null,null,null,null,null)
-B.b8s=new A.ac("No organization assigned.",null,null,null,null,null,null,null,null,null,null)
+B.b8n=new A.ac("Accomplishment Reports",null,B.e1,null,null,null,null,null,null,null,null)
+B.b8o=new A.ac("Monitor the approval life-cycle of your submitted GPOA activities.",null,B.ho,null,null,null,null,null,null,null,null)
+B.b8p=new A.ac("View All",null,null,null,null,null,null,null,null,null,null)
+B.b8q=new A.ac("Select an organization to generate and print their full General Plan of Activities.",null,B.ho,null,null,null,null,null,null,null,null)
+B.b8r=new A.ac("Confirm",null,null,null,null,null,null,null,null,null,null)
+B.b8s=new A.ac("Add User",null,null,null,null,null,null,null,null,null,null)
+B.b8t=new A.ac("No organization assigned.",null,null,null,null,null,null,null,null,null,null)
 B.b7u=new A.r(!0,B.bx,null,null,null,null,12,null,B.jM,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
-B.b8u=new A.ac("Waiting for submission...",null,B.b7u,null,null,null,null,null,null,null,null)
-B.b8v=new A.ac("Endorse",null,null,null,null,null,null,null,null,null,null)
-B.b8w=new A.ac("Add Officer to List",null,null,null,null,null,null,null,null,null,null)
-B.b8x=new A.ac("Add to List",null,null,null,null,null,null,null,null,null,null)
-B.b8z=new A.ac("Status: ",null,B.vv,null,null,null,null,null,null,null,null)
+B.b8v=new A.ac("Waiting for submission...",null,B.b7u,null,null,null,null,null,null,null,null)
+B.b8w=new A.ac("Endorse",null,null,null,null,null,null,null,null,null,null)
+B.b8x=new A.ac("Add Officer to List",null,null,null,null,null,null,null,null,null,null)
+B.b8y=new A.ac("Add to List",null,null,null,null,null,null,null,null,null,null)
+B.b8A=new A.ac("Status: ",null,B.vv,null,null,null,null,null,null,null,null)
 B.b5D=new A.r(!0,B.F,null,null,null,null,48,B.d0,null,2,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
-B.b8A=new A.ac("ATLAS",null,B.b5D,null,null,null,null,null,null,null,null)
+B.b8B=new A.ac("ATLAS",null,B.b5D,null,null,null,null,null,null,null,null)
 B.b57=new A.r(!0,B.a3,null,null,null,null,28,B.d0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
-B.b8B=new A.ac("0.00 PTS",null,B.b57,null,null,null,null,null,null,null,null)
-B.b8C=new A.ac("Review Date",null,null,null,null,null,null,null,null,null,null)
-B.b8D=new A.ac("Add Organization",null,null,null,null,null,null,null,null,null,null)
+B.b8C=new A.ac("0.00 PTS",null,B.b57,null,null,null,null,null,null,null,null)
+B.b8D=new A.ac("Review Date",null,null,null,null,null,null,null,null,null,null)
+B.b8E=new A.ac("Add Organization",null,null,null,null,null,null,null,null,null,null)
 B.RK=new A.r(!0,null,null,null,null,null,10,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null)
-B.b8E=new A.ac("Return",null,B.RK,null,null,null,null,null,null,null,null)
-B.b8F=new A.ac("Review and approve accomplishment reports submitted by organizations.",null,B.ho,null,null,null,null,null,null,null,null)
-B.b8G=new A.ac("Reject Date",null,null,null,null,null,null,null,null,null,null)
-B.b8H=new A.ac("Approve Event Date",null,null,null,null,null,null,null,null,null,null)
-B.b8I=new A.ac("Monitor the transition from approved GPOA to scheduled events.",null,B.ho,null,null,null,null,null,null,null,null)
+B.b8F=new A.ac("Return",null,B.RK,null,null,null,null,null,null,null,null)
+B.b8G=new A.ac("Review and approve accomplishment reports submitted by organizations.",null,B.ho,null,null,null,null,null,null,null,null)
+B.b8H=new A.ac("Reject Date",null,null,null,null,null,null,null,null,null,null)
+B.b8I=new A.ac("Approve Event Date",null,null,null,null,null,null,null,null,null,null)
 B.b8J=new A.ac("Sign In",null,B.vx,null,null,null,null,null,null,null,null)
 B.b8K=new A.ac("Provision New Account",null,null,null,null,null,null,null,null,null,null)
 B.b8L=new A.ac("Org Standing",null,B.RF,null,null,null,null,null,null,null,null)
@@ -142480,7 +142480,7 @@ B.b9E=new A.ac("Logout",null,null,null,null,null,null,null,null,null,null)
 B.b9F=new A.ac("Select Target Participants",null,null,null,null,null,null,null,null,null,null)
 B.b9H=new A.ac("CURRENT RANK",null,B.RC,null,null,null,null,null,null,null,null)
 B.b9J=new A.ac("Approve Date",null,null,null,null,null,null,null,null,null,null)
-B.b9L=new A.ac("Operational Workflow",null,B.e1,null,null,null,null,null,null,null,null)
+B.b9M=new A.ac("Track your approved GPOAs through the scheduling and completion process.",null,B.ho,null,null,null,null,null,null,null,null)
 B.b9P=new A.ac("Are you sure you want to approve this schedule? The organization will be notified.",null,null,null,null,null,null,null,null,null,null)
 B.b9Q=new A.ac("Select SDGs Addressed",null,null,null,null,null,null,null,null,null,null)
 B.S0=new A.ac("Add",null,null,null,null,null,null,null,null,null,null)
