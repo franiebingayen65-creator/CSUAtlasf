@@ -833,8 +833,8 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
                 indicator: BoxDecoration(borderRadius: BorderRadius.circular(12), color: const Color(0xFF6366F1)),
                 dividerColor: Colors.transparent,
                 tabs: [
-                  const Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.inventory_2_rounded, size: 18), SizedBox(width: 8), Text('Organizational Archives', style: TextStyle(fontWeight: FontWeight.bold))])),
                   Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.notification_important_rounded, size: 18), const SizedBox(width: 8), Text('Action Required (${pendingApprovals.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
+                  const Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.inventory_2_rounded, size: 18), SizedBox(width: 8), Text('Organizational Archives', style: TextStyle(fontWeight: FontWeight.bold))])),
                 ],
               ),
             ),
@@ -842,6 +842,14 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
             Expanded(
               child: TabBarView(
                 children: [
+                  pendingApprovals.isEmpty ? const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.check_circle_outline, size: 48, color: Colors.green), SizedBox(height: 16), Text('All clear! No pending approvals.', style: TextStyle(color: Colors.grey))])) : ListView.builder(
+                    itemCount: pendingApprovals.length,
+                    itemBuilder: (context, index) {
+                      final act = pendingApprovals[index];
+                      final org = widget.organizations.firstWhere((o) => o['id'].toString() == act['organization_id']?.toString(), orElse: () => {'name': 'Unknown Org'});
+                      return _buildGPOAListTile(act, org);
+                    },
+                  ),
                   orgsToDisplay.isEmpty ? const Center(child: Text('No organizations found.')) : ListView.builder(
                     itemCount: orgsToDisplay.length,
                     itemBuilder: (context, index) {
@@ -861,14 +869,6 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
                           ),
                         ),
                       );
-                    },
-                  ),
-                  pendingApprovals.isEmpty ? const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.check_circle_outline, size: 48, color: Colors.green), SizedBox(height: 16), Text('All clear! No pending approvals.', style: TextStyle(color: Colors.grey))])) : ListView.builder(
-                    itemCount: pendingApprovals.length,
-                    itemBuilder: (context, index) {
-                      final act = pendingApprovals[index];
-                      final org = widget.organizations.firstWhere((o) => o['id'].toString() == act['organization_id']?.toString(), orElse: () => {'name': 'Unknown Org'});
-                      return _buildGPOAListTile(act, org);
                     },
                   ),
                 ],
@@ -1199,8 +1199,8 @@ class _ManageEventsViewState extends State<_ManageEventsView> {
                 indicator: BoxDecoration(borderRadius: BorderRadius.circular(12), color: const Color(0xFF6366F1)),
                 dividerColor: Colors.transparent,
                 tabs: [
-                  const Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.calendar_month_rounded, size: 18), SizedBox(width: 8), Text('Organizations Schedule', style: TextStyle(fontWeight: FontWeight.bold))])),
                   Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.pending_actions_rounded, size: 18), const SizedBox(width: 8), Text('Awaiting Approval (${awaiting.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
+                  const Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.calendar_month_rounded, size: 18), SizedBox(width: 8), Text('Organizations Schedule', style: TextStyle(fontWeight: FontWeight.bold))])),
                 ],
               ),
             ),
@@ -1208,7 +1208,18 @@ class _ManageEventsViewState extends State<_ManageEventsView> {
             Expanded(
               child: TabBarView(
                 children: [
-                  // Tab 1: Organization-based groupings
+                  // Tab 1: Immediate actions
+                  awaiting.isEmpty 
+                      ? const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.check_circle_outline_rounded, size: 48, color: Colors.green), SizedBox(height: 16), Text('All event dates are approved.', style: TextStyle(color: Colors.grey))])) 
+                      : ListView.builder(
+                          itemCount: awaiting.length,
+                          itemBuilder: (context, index) {
+                            final act = awaiting[index];
+                            final org = widget.organizations.firstWhere((o) => o['id'].toString() == act['organization_id']?.toString(), orElse: () => {'name': 'Unknown Org'});
+                            return _buildEventCard(context, act, org);
+                          },
+                        ),
+                  // Tab 2: Organization-based groupings
                   ListView.builder(
                     itemCount: orgsToDisplay.length,
                     itemBuilder: (context, index) {
@@ -1237,13 +1248,6 @@ class _ManageEventsViewState extends State<_ManageEventsView> {
                       );
                     },
                   ),
-                  // Tab 2: Immediate actions
-                  awaiting.isEmpty 
-                      ? const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.check_circle_outline_rounded, size: 48, color: Colors.green), SizedBox(height: 16), Text('All event dates are approved.', style: TextStyle(color: Colors.grey))])) 
-                      : ListView.builder(
-                          itemCount: awaiting.length,
-                          itemBuilder: (c, i) => _buildEventCard(context, awaiting[i], widget.organizations.firstWhere((o) => o['id'].toString() == awaiting[i]['organization_id']?.toString(), orElse: () => {'name': 'Unknown Org'})),
-                        ),
                 ],
               ),
             ),

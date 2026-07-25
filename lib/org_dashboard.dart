@@ -208,9 +208,9 @@ class _OrgDashboardState extends State<OrgDashboard> {
       case 'Dashboard':
         return _OrgDashboardContent(orgData: _orgData!, activities: _myActivities, userRole: _userRole ?? 'President', onRefresh: _fetchOrgData);
       case 'GPOA Submission':
-        return _GPOASubmissionView(orgId: _orgData!['id']);
-      case 'GPOA Status':
-        return _GPOAStatusGridView(activities: _myActivities);
+        return _GPOASubmissionView(orgId: _orgData!['id'], onBack: () => setState(() => _activePage = 'Manage GPOA'));
+      case 'Manage GPOA':
+        return _GPOAStatusGridView(activities: _myActivities, onAction: (page) => setState(() => _activePage = page), userRole: _userRole ?? 'President');
       case 'GPOA Review':
         return _GPOAReviewView(activities: _myActivities, onRefresh: _fetchOrgData);
       case 'View Events':
@@ -218,7 +218,7 @@ class _OrgDashboardState extends State<OrgDashboard> {
       case 'Scheduling & Letters':
         return _MyEventsView(activities: _myActivities, onRefresh: _fetchOrgData, userRole: _userRole ?? 'President');
       case 'GPOA Report':
-        return _GPOAReportPrintingView(orgData: _orgData!, activities: _myActivities, profiles: _orgProfiles);
+        return _GPOAReportPrintingView(orgData: _orgData!, activities: _myActivities, profiles: _orgProfiles, onBack: () => setState(() => _activePage = 'Manage GPOA'));
       case 'Submit Report':
         return _SubmitReportView(activities: _myActivities, userRole: _userRole ?? 'President', onRefresh: _fetchOrgData);
       case 'Organization Ranks':
@@ -308,20 +308,12 @@ class _OrgSidebar extends StatelessWidget {
                     onTap: () => onPageSelected('Dashboard'),
                   ),
                   if (!isCollapsed) const _SidebarHeader(title: 'GPOA MANAGEMENT'),
-                  if (!isAdviser)
-                    _SidebarItem(
-                      icon: Icons.note_add_rounded,
-                      title: 'GPOA Submission',
-                      isSelected: activePage == 'GPOA Submission',
-                      isCollapsed: isCollapsed,
-                      onTap: () => onPageSelected('GPOA Submission'),
-                    ),
                   _SidebarItem(
                     icon: Icons.grid_view_rounded,
-                    title: 'GPOA Status',
-                    isSelected: activePage == 'GPOA Status',
+                    title: 'Manage GPOA',
+                    isSelected: ['Manage GPOA', 'GPOA Submission', 'GPOA Report'].contains(activePage),
                     isCollapsed: isCollapsed,
-                    onTap: () => onPageSelected('GPOA Status'),
+                    onTap: () => onPageSelected('Manage GPOA'),
                   ),
                   if (isAdviser)
                     _SidebarItem(
@@ -331,13 +323,6 @@ class _OrgSidebar extends StatelessWidget {
                       isCollapsed: isCollapsed,
                       onTap: () => onPageSelected('GPOA Review'),
                     ),
-                  _SidebarItem(
-                    icon: Icons.print_rounded,
-                    title: 'GPOA Report',
-                    isSelected: activePage == 'GPOA Report',
-                    isCollapsed: isCollapsed,
-                    onTap: () => onPageSelected('GPOA Report'),
-                  ),
                   if (!isCollapsed) const _SidebarHeader(title: 'EVENT TRACKING'),
                   _SidebarItem(
                     icon: Icons.event_available_rounded,
@@ -700,7 +685,8 @@ class _OrgStandingCard extends StatelessWidget {
 
 class _GPOASubmissionView extends StatefulWidget {
   final String orgId;
-  const _GPOASubmissionView({required this.orgId});
+  final VoidCallback onBack;
+  const _GPOASubmissionView({required this.orgId, required this.onBack});
   @override
   State<_GPOASubmissionView> createState() => _GPOASubmissionViewState();
 }
@@ -914,6 +900,12 @@ class _GPOASubmissionViewState extends State<_GPOASubmissionView> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
+            IconButton(
+              onPressed: widget.onBack,
+              icon: const Icon(Icons.arrow_back_rounded),
+              style: IconButton.styleFrom(backgroundColor: Colors.white, elevation: 2),
+            ),
+            const SizedBox(width: 20),
             Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFF6366F1).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(16)), child: const Icon(Icons.note_add_rounded, color: Color(0xFF6366F1), size: 32)),
             const SizedBox(width: 20),
             const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1781,13 +1773,16 @@ class _OrgViewEventsView extends StatelessWidget {
 // Proposal Tracking View
 class _GPOAStatusGridView extends StatelessWidget {
   final List<Map<String, dynamic>> activities;
-  const _GPOAStatusGridView({required this.activities});
+  final Function(String) onAction;
+  final String userRole;
+  const _GPOAStatusGridView({required this.activities, required this.onAction, required this.userRole});
 
   @override
   Widget build(BuildContext context) {
     final inReview = activities.where((a) => ['Pending', 'Endorsed'].contains(a['status'])).toList();
     final revision = activities.where((a) => a['status'] == 'Needs Revision').toList();
     final declined = activities.where((a) => a['status'] == 'Rejected').toList();
+    final isAdviser = userRole == 'Adviser';
 
     return DefaultTabController(
       length: 3,
@@ -1796,8 +1791,46 @@ class _GPOAStatusGridView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Proposal Tracking', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Color(0xFF0F172A), letterSpacing: -1)),
-            const Text('Monitor the approval life-cycle of your submitted GPOA activities.', style: TextStyle(color: Color(0xFF64748B), fontSize: 16)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Manage GPOA', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Color(0xFF0F172A), letterSpacing: -1)),
+                    const Text('Monitor the approval life-cycle of your submitted GPOA activities.', style: TextStyle(color: Color(0xFF64748B), fontSize: 16)),
+                  ],
+                ),
+                Row(
+                  children: [
+                    if (!isAdviser)
+                      ElevatedButton.icon(
+                        onPressed: () => onAction('GPOA Submission'),
+                        icon: const Icon(Icons.add_rounded),
+                        label: const Text('New Proposal'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF6366F1),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    const SizedBox(width: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => onAction('GPOA Report'),
+                      icon: const Icon(Icons.print_rounded),
+                      label: const Text('Generate Report'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF6366F1),
+                        side: const BorderSide(color: Color(0xFF6366F1)),
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
             const SizedBox(height: 32),
             Container(
               padding: const EdgeInsets.all(6),
@@ -1946,77 +1979,93 @@ class _GPOAReportPrintingView extends StatelessWidget {
   final Map<String, dynamic> orgData;
   final List<Map<String, dynamic>> activities;
   final List<Map<String, dynamic>> profiles;
+  final VoidCallback onBack;
 
   const _GPOAReportPrintingView({
     required this.orgData,
     required this.activities,
     required this.profiles,
+    required this.onBack,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(40),
-      child: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 800),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(40),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(28),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 20)
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    const Icon(Icons.print_rounded, size: 64, color: Color(0xFF6366F1)),
-                    const SizedBox(height: 24),
-                    const Text('Generate GPOA Document', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Generate a professional PDF document of your organization\'s General Plan of Activities following the university template.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Color(0xFF64748B), fontSize: 16),
+      child: Column(
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: onBack,
+              icon: const Icon(Icons.arrow_back_rounded),
+              label: const Text('Back to Manage GPOA', style: TextStyle(fontWeight: FontWeight.bold)),
+              style: TextButton.styleFrom(foregroundColor: const Color(0xFF6366F1)),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Center(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(40),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(28),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 20)
+                      ],
                     ),
-                    const SizedBox(height: 40),
-                    Row(
+                    child: Column(
                       children: [
-                        Expanded(
-                          child: _SummaryItem(label: 'TOTAL ACTIVITIES', value: activities.length.toString(), icon: Icons.assignment_rounded),
+                        const Icon(Icons.print_rounded, size: 64, color: Color(0xFF6366F1)),
+                        const SizedBox(height: 24),
+                        const Text('Generate GPOA Document', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Generate a professional PDF document of your organization\'s General Plan of Activities following the university template.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Color(0xFF64748B), fontSize: 16),
                         ),
-                        const SizedBox(width: 20),
-                        Expanded(
-                          child: _SummaryItem(label: 'READY FOR PRINT', value: activities.where((a) => a['status'] == 'Approved' || a['status'] == 'Scheduled' || a['status'] == 'Completed').length.toString(), icon: Icons.check_circle_rounded),
+                        const SizedBox(height: 40),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _SummaryItem(label: 'TOTAL ACTIVITIES', value: activities.length.toString(), icon: Icons.assignment_rounded),
+                            ),
+                            const SizedBox(width: 20),
+                            Expanded(
+                              child: _SummaryItem(label: 'READY FOR PRINT', value: activities.where((a) => a['status'] == 'Approved' || a['status'] == 'Scheduled' || a['status'] == 'Completed').length.toString(), icon: Icons.check_circle_rounded),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 40),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 56,
+                          child: ElevatedButton.icon(
+                            onPressed: () => _handlePrint(context),
+                            icon: const Icon(Icons.picture_as_pdf_rounded),
+                            label: const Text('GENERATE AND PRINT PDF', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF6366F1),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              elevation: 0,
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 40),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton.icon(
-                        onPressed: () => _handlePrint(context),
-                        icon: const Icon(Icons.picture_as_pdf_rounded),
-                        label: const Text('GENERATE AND PRINT PDF', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF6366F1),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          elevation: 0,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

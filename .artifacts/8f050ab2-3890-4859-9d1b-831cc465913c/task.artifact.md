@@ -1,8 +1,13 @@
-- [ ] PDF Compatibility Improvement
-    - [ ] Import `printing` and `pdf/widgets` (already there, but need Google Fonts)
-    - [ ] Load Roboto fonts in `GPOAPdfGenerator`
-    - [ ] Update all `pw.TextStyle` to use the loaded fonts
-- [ ] GitHub & Automation Setup
-    - [ ] Create `.github/workflows/deploy.yml` for GitHub Pages
-    - [ ] Initialize Git repository locally
-    - [ ] Stage and commit all files
+- [x] PDF Compatibility Improvement
+    - [x] Import `printing` and `pdf/widgets` (already there, but need Google Fonts)
+    - [x] Load Roboto fonts in `GPOAPdfGenerator`
+    - [x] Update all `pw.TextStyle` to use the loaded fonts
+- [x] GitHub & Automation Setup
+    - [x] Create `.github/workflows/deploy.yml` for GitHub Pages
+    - [x] Initialize Git repository locally
+    - [x] Stage and commit all files
+- [x] Refactor GPOA Navigation (Org Dashboard)
+    - [x] Rename "GPOA Status" to "Manage GPOA" in Sidebar
+    - [x] Remove "GPOA Submission" and "GPOA Report" from Sidebar
+    - [x] Add "New Proposal" and "Generate Report" buttons to Manage GPOA view
+    - [x] Add "Back" button to Submission and Report views
