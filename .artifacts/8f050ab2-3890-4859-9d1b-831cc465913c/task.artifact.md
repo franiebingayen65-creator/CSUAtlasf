@@ -11,3 +11,6 @@
     - [x] Remove "GPOA Submission" and "GPOA Report" from Sidebar
     - [x] Add "New Proposal" and "Generate Report" buttons to Manage GPOA view
     - [x] Add "Back" button to Submission and Report views
+- [/] Activity Workflow UI Cleanup
+    - [ ] Update header title/description in `_OrgViewEventsView`
+    - [ ] Rename Tab items to remove "Phase" labels
