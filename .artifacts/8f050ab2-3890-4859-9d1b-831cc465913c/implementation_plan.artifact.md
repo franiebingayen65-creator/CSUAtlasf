@@ -1,25 +1,28 @@
-# Implementation Plan - Activity Workflow UI Cleanup
+# Implementation Plan - Refine Scheduling Revisions
 
-The goal is to simplify the "View Events" page in the Organization Dashboard by removing the "Phase" terminology and providing more professional titles.
+The goal is to simplify the revision process within the "Scheduling & Letters" navigation by introducing a dedicated "Revisions" tab and limiting corrections to only the event schedule (date/time).
 
 ## Proposed Changes
 
 ### Organization Dashboard
 
 #### [MODIFY] [org_dashboard.dart](file:///C:/CSUAtlasf/lib/org_dashboard.dart)
-- Update the main title and description of the `_OrgViewEventsView`.
-- Remove "Phase X:" prefixes from the TabBar items.
-- Update tab names to be more descriptive:
-    - "Phase 1: Scheduling" -> "For Scheduling"
-    - "Phase 2: Review" -> "Awaiting Approval"
-    - "Phase 3: Ongoing" -> "Ongoing Events"
-    - "Phase 4: Completed" -> "Completed"
+- Update `_MyEventsView` to use **three tabs**:
+    1.  **"Event Scheduling"**: For activities with status `Approved` or `Awaiting Date Approval`.
+    2.  **"Activity Corrections"**: For activities with status `Needs Revision`.
+    3.  **"Request Letters"**: For activities with status `Scheduled`.
+- Modify the "Revise" action for items in the **Activity Corrections** tab:
+    - Instead of allowing full text edits, it will open the **Date and Time picker**.
+    - After picking a new date, the activity will be resubmitted with the status set back to `Awaiting Date Approval`.
+- Update internal filtering logic (`schedulingList`, `revisionList`, `letterList`) to support the new three-tab layout.
 
 ## Verification Plan
 
 ### Manual Verification
-1. Log in as a President or Adviser.
-2. Navigate to "View Events" in the sidebar.
-3. Verify the main header says "Activity Progress Tracker".
-4. Verify the tabs no longer show "Phase 1", "Phase 2", etc.
-5. Verify the tab content still displays the correct activity lists.
+1.  Navigate to "Scheduling & Letters".
+2.  Verify there are now **three tabs** at the top.
+3.  Ensure items with status `Needs Revision` appear in the "Activity Corrections" tab.
+4.  Click the "Revise" button on an item in the corrections tab.
+5.  Verify that it only prompts for a **Date and Time**, not a full form.
+6.  Confirm that after saving, the item moves to the "Event Scheduling" tab with a "Pending" or "Awaiting Approval" label.
+7.  Verify that the "Request Letters" tab remains isolated for `Scheduled` activities.

@@ -1141,114 +1141,218 @@ class _MyEventsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAdviser = userRole == 'Adviser';
-    final myEvents = activities.where((a) => ['Approved', 'Awaiting Date Approval', 'Scheduled', 'Needs Revision'].contains(a['status'])).toList();
+    final schedulingList = activities.where((a) => ['Approved', 'Awaiting Date Approval'].contains(a['status'])).toList();
+    final revisionList = activities.where((a) => a['status'] == 'Needs Revision').toList();
+    final letterList = activities.where((a) => a['status'] == 'Scheduled').toList();
 
-    return Padding(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(isAdviser ? 'Event Calendar' : 'Scheduling & Request Letters', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          Text(isAdviser ? 'Monitor and oversee event schedule.' : 'Finalize dates and generate formal request letters.', style: const TextStyle(color: Colors.grey)),
-          const SizedBox(height: 24),
-          Expanded(
-            child: myEvents.isEmpty
-                ? const Center(child: Text('No activities ready for scheduling.'))
-                : ListView.builder(
-                    itemCount: myEvents.length,
-                    itemBuilder: (context, index) {
-                      final event = myEvents[index];
-                      final status = event['status'];
-                      final hasDate = event['proposed_date'] != null;
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.withValues(alpha: 0.1))),
-                        elevation: 0,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(color: (status == 'Scheduled' ? Colors.green : Colors.blue).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
-                                child: Icon(status == 'Scheduled' ? Icons.event_available : Icons.event, color: status == 'Scheduled' ? Colors.green : Colors.blue),
-                              ),
-                              const SizedBox(width: 20),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(event['title'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                    Row(children: [const Text('Status: ', style: TextStyle(fontSize: 12, color: Colors.grey)), StatusBadge(status: status)]),
-                                    Text(hasDate ? 'Date & Time: ${AppUtils.formatDateTime(event['proposed_date'])}' : 'Date & Time: Not selected', style: TextStyle(color: hasDate ? Colors.black87 : Colors.red, fontSize: 13)),
-                                  ],
-                                ),
-                              ),
-                              IconButton(onPressed: () => _showActivityDetails(context, event), icon: const Icon(Icons.info_outline, color: Colors.grey)),
-                              if (!isAdviser) _buildAction(context, event, onRefresh),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
+    return DefaultTabController(
+      length: 3,
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(isAdviser ? 'Event Calendar' : 'Scheduling & Request Letters', style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Color(0xFF0F172A), letterSpacing: -1)),
+            Text(isAdviser ? 'Monitor and oversee event schedule.' : 'Finalize dates, handle corrections, and manage request letters for your events.', style: const TextStyle(color: Color(0xFF64748B), fontSize: 16)),
+            const SizedBox(height: 32),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10)]),
+              child: TabBar(
+                labelColor: Colors.white,
+                unselectedLabelColor: const Color(0xFF64748B),
+                indicatorSize: TabBarIndicatorSize.tab,
+                indicator: BoxDecoration(borderRadius: BorderRadius.circular(12), color: const Color(0xFF6366F1)),
+                dividerColor: Colors.transparent,
+                tabs: [
+                  Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.calendar_month_rounded, size: 18), const SizedBox(width: 8), Text('Event Scheduling (${schedulingList.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
+                  Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.history_edu_rounded, size: 18), const SizedBox(width: 8), Text('Activity Corrections (${revisionList.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
+                  Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.mark_email_read_rounded, size: 18), const SizedBox(width: 8), Text('Request Letters (${letterList.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  _buildEventList(context, schedulingList, tabType: 'scheduling'),
+                  _buildEventList(context, revisionList, tabType: 'corrections'),
+                  _buildEventList(context, letterList, tabType: 'letters'),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
+  Widget _buildEventList(BuildContext context, List<Map<String, dynamic>> list, {required String tabType}) {
+    final isAdviser = userRole == 'Adviser';
+    String emptyText = 'No activities found.';
+    IconData emptyIcon = Icons.inbox_rounded;
+
+    if (tabType == 'scheduling') {
+      emptyText = 'No activities ready for scheduling.';
+      emptyIcon = Icons.calendar_today_outlined;
+    } else if (tabType == 'corrections') {
+      emptyText = 'No activities needing correction.';
+      emptyIcon = Icons.edit_notifications_outlined;
+    } else if (tabType == 'letters') {
+      emptyText = 'No activities ready for request letters.';
+      emptyIcon = Icons.mail_outline_rounded;
+    }
+
+    if (list.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(emptyIcon, size: 48, color: const Color(0xFFCBD5E1)),
+            const SizedBox(height: 16),
+            Text(emptyText, style: const TextStyle(color: Color(0xFF94A3B8))),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: list.length,
+      itemBuilder: (context, index) {
+        final event = list[index];
+        final status = event['status'];
+        final hasDate = event['proposed_date'] != null;
+        return Card(
+          margin: const EdgeInsets.only(bottom: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.grey.withValues(alpha: 0.1))),
+          elevation: 0,
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: (status == 'Scheduled' ? Colors.green : Colors.blue).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(16)),
+                  child: Icon(status == 'Scheduled' ? Icons.event_available : Icons.event, color: status == 'Scheduled' ? Colors.green : Colors.blue, size: 24),
+                ),
+                const SizedBox(width: 24),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(event['title'], style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: Color(0xFF1E293B))),
+                      const SizedBox(height: 4),
+                      Row(children: [const Text('Current Status: ', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))), StatusBadge(status: status)]),
+                      const SizedBox(height: 4),
+                      Text(hasDate ? 'Scheduled Date: ${AppUtils.formatDateTime(event['proposed_date'])}' : 'Date & Time: Not selected', style: TextStyle(color: hasDate ? const Color(0xFF0F172A) : Colors.red, fontSize: 13, fontWeight: hasDate ? FontWeight.w600 : FontWeight.bold)),
+                    ],
+                  ),
+                ),
+                IconButton(onPressed: () => _showActivityDetails(context, event), icon: const Icon(Icons.info_outline_rounded, color: Color(0xFF94A3B8))),
+                const SizedBox(width: 8),
+                if (!isAdviser) _buildAction(context, event, onRefresh),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildAction(BuildContext context, Map<String, dynamic> event, VoidCallback onRefresh) {
-    if (['Approved', 'Awaiting Date Approval', 'Needs Revision'].contains(event['status'])) {
+    final status = event['status'];
+    if (['Approved', 'Awaiting Date Approval', 'Needs Revision'].contains(status)) {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (event['status'] == 'Needs Revision')
-            Padding(
-              padding: const EdgeInsets.only(right: 8.0),
-              child: ElevatedButton.icon(onPressed: () => _showEditDialog(context, event, onRefresh), icon: const Icon(Icons.edit_note, size: 16), label: const Text('Revise'), style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white)),
-            ),
-          IconButton(onPressed: () => _selectDate(context, event, onRefresh), icon: const Icon(Icons.edit_calendar, color: Color(0xFF6366F1))),
-          if (['Approved', 'Needs Revision'].contains(event['status']))
+          if (status == 'Needs Revision')
             ElevatedButton.icon(
-              onPressed: () async {
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('Confirm Submission'),
-                    content: const Text('Are you sure you want to submit this event for date approval?'),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                      ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1)), child: const Text('Submit')),
-                    ],
-                  ),
-                );
-                if (confirm == true) {
-                  if (context.mounted) {
-                    _requestDateApproval(context, event, onRefresh);
-                  }
-                }
-              },
-              icon: const Icon(Icons.send, size: 16),
-              label: const Text('Submit'),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1), foregroundColor: Colors.white),
+              onPressed: () => _handleRevision(context, event, onRefresh), 
+              icon: const Icon(Icons.edit_calendar_rounded, size: 16), 
+              label: const Text('Revise Schedule'), 
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white, elevation: 0),
             )
-          else
-            Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)), child: const Text('Pending', style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.bold))),
+          else ...[
+            IconButton(
+              onPressed: () => _selectDate(context, event, onRefresh), 
+              icon: const Icon(Icons.edit_calendar_rounded, color: Color(0xFF6366F1)),
+              tooltip: 'Pick Date',
+            ),
+            if (status == 'Approved')
+              ElevatedButton.icon(
+                onPressed: () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Confirm Submission'),
+                      content: const Text('Are you sure you want to submit this event for date approval?'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                        ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1)), child: const Text('Submit')),
+                      ],
+                    ),
+                  );
+                  if (confirm == true) {
+                    if (context.mounted) {
+                      _requestDateApproval(context, event, onRefresh);
+                    }
+                  }
+                },
+                icon: const Icon(Icons.send_rounded, size: 16),
+                label: const Text('Submit'),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1), foregroundColor: Colors.white, elevation: 0),
+              )
+            else
+              Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)), child: const Text('Pending Approval', style: TextStyle(color: Colors.orange, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.5))),
+          ],
         ],
       );
-    } else if (event['status'] == 'Scheduled') {
+    } else if (status == 'Scheduled') {
       final hasLetter = event['letter_url'] != null;
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (hasLetter)
-            IconButton(onPressed: () async { final url = Uri.parse(event['letter_url'].toString()); if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication); }, icon: const Icon(Icons.file_present, color: Colors.blue)),
-          ElevatedButton.icon(onPressed: () => _uploadLetter(context, event, onRefresh), icon: Icon(hasLetter ? Icons.sync : Icons.upload_file, size: 16), label: Text(hasLetter ? 'Update' : 'Upload'), style: ElevatedButton.styleFrom(backgroundColor: hasLetter ? Colors.blue : Colors.green, foregroundColor: Colors.white)),
+            IconButton(onPressed: () async { final url = Uri.parse(event['letter_url'].toString()); if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication); }, icon: const Icon(Icons.file_present_rounded, color: Colors.blue)),
+          ElevatedButton.icon(onPressed: () => _uploadLetter(context, event, onRefresh), icon: Icon(hasLetter ? Icons.sync_rounded : Icons.upload_file_rounded, size: 16), label: Text(hasLetter ? 'Update Letter' : 'Upload Letter'), style: ElevatedButton.styleFrom(backgroundColor: hasLetter ? Colors.blue : const Color(0xFF10B981), foregroundColor: Colors.white, elevation: 0)),
         ],
       );
     }
     return const SizedBox();
+  }
+
+  Future<void> _handleRevision(BuildContext context, Map<String, dynamic> event, VoidCallback onRefresh) async {
+    final now = DateTime.now();
+    final firstDate = DateTime(now.year, now.month, now.day);
+    DateTime initialDateValue = event['proposed_date'] != null ? DateTime.parse(event['proposed_date'].toString()).toLocal() : now;
+    if (initialDateValue.isBefore(firstDate)) initialDateValue = firstDate;
+
+    final DateTime? pickedDate = await showDatePicker(
+      context: context, 
+      initialDate: initialDateValue, 
+      firstDate: firstDate, 
+      lastDate: DateTime(now.year + 5),
+      helpText: 'REVISE EVENT DATE',
+    );
+    
+    if (pickedDate != null && context.mounted) {
+      final TimeOfDay? pickedTime = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initialDateValue));
+      if (pickedTime != null) {
+        final DateTime finalDateTime = DateTime(pickedDate.year, pickedDate.month, pickedDate.day, pickedTime.hour, pickedTime.minute);
+        try {
+          await Supabase.instance.client.from('activities').update({
+            'proposed_date': finalDateTime.toUtc().toIso8601String(),
+            'status': 'Awaiting Date Approval',
+          }).eq('id', event['id']);
+          if (context.mounted) {
+            AppUtils.showTopToast(context, 'Schedule updated and resubmitted for approval!');
+            onRefresh();
+          }
+        } catch (e) {
+          if (context.mounted) AppUtils.showTopToast(context, 'Error: $e', isError: true);
+        }
+      }
+    }
   }
 
   void _showActivityDetails(BuildContext context, Map<String, dynamic> activity) {
@@ -1347,70 +1451,6 @@ class _MyEventsView extends StatelessWidget {
         }
       }
     }
-  }
-
-  void _showEditDialog(BuildContext context, Map<String, dynamic> event, VoidCallback onRefresh) {
-    final controllers = {
-      'title': TextEditingController(text: event['title']),
-      'sdgs': TextEditingController(text: event['sdgs']),
-      'objectives': TextEditingController(text: event['objectives']),
-      'outcome': TextEditingController(text: event['outcome']),
-      'participants': TextEditingController(text: event['participants']),
-      'timeFrame': TextEditingController(text: event['time_frame']),
-      'delivery': TextEditingController(text: event['delivery_strategy']),
-      'persons': TextEditingController(text: event['persons_involved']),
-      'facilities': TextEditingController(text: event['facilities_materials']),
-      'budget': TextEditingController(text: event['budget_allocation']),
-    };
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Revise Plan'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (event['remarks']?.toString().isNotEmpty ?? false)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(bottom: 20),
-                  decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.orange.withValues(alpha: 0.3))),
-                  child: Text('Feedback: ${event['remarks']}'),
-                ),
-              ...controllers.entries.map((e) => TextField(controller: e.value, decoration: InputDecoration(labelText: e.key), maxLines: e.key == 'objectives' ? 3 : 1)),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () async {
-              try {
-                await Supabase.instance.client.from('activities').update({
-                  'title': controllers['title']!.text,
-                  'sdgs': controllers['sdgs']!.text,
-                  'objectives': controllers['objectives']!.text,
-                  'outcome': controllers['outcome']!.text,
-                  'participants': controllers['participants']!.text,
-                  'time_frame': controllers['timeFrame']!.text,
-                  'delivery_strategy': controllers['delivery']!.text,
-                  'persons_involved': controllers['persons']!.text,
-                  'facilities_materials': controllers['facilities']!.text,
-                  'budget_allocation': controllers['budget']!.text,
-                  'status': 'Pending',
-                }).eq('id', event['id']);
-                if (ctx.mounted) { Navigator.pop(ctx); onRefresh(); }
-              } catch (e) {
-                if (ctx.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-              }
-            },
-            child: const Text('Resubmit'),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _requestDateApproval(BuildContext context, Map<String, dynamic> event, VoidCallback onRefresh) async {

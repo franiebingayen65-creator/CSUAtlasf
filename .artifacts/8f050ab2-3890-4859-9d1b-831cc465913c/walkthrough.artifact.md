@@ -1,27 +1,39 @@
-# Walkthrough - Activity Workflow UI Cleanup
+# Walkthrough - Refined Scheduling & Revision Flow
 
-I have updated the "View Events" page in the Organization Dashboard to provide a cleaner and more professional interface.
+I have improved the scheduling and revision workflow in the Organization Dashboard to make it faster and more focused on event logistics.
 
 ## Changes Made
 
-### 1. Header Update
-- Changed the title from "Operational Workflow" to **"Activity Progress Tracker"**.
-- Updated the description to clearly explain that this view tracks activities from approval through to completion.
+### 1. Three-Tab Navigation
+The **"Scheduling & Letters"** page now features three distinct tabs for better task organization:
+- **Event Scheduling**: For activities waiting for their first date assignment or admin approval.
+- **Activity Corrections**: A dedicated space for activities returned by the admin for date adjustments.
+- **Request Letters**: For finalized schedules that now require formal documentation.
 
-### 2. Tab Bar Refinement
-- Removed the "Phase X:" numbering from all tabs.
-- Renamed tabs to more descriptive titles:
-    - **For Scheduling**: (Formerly Phase 1: Scheduling)
-    - **Awaiting Approval**: (Formerly Phase 2: Review)
-    - **Ongoing Events**: (Formerly Phase 3: Ongoing)
-    - **Completed**: (Formerly Phase 4: Completed)
+### 2. Simplified Revision Logic
+- Removed the complex full-text edit form for revisions.
+- Clicking **"Revise Schedule"** now directly opens the **Date and Time picker**.
+- Updating the date now **automatically resubmits** the activity for admin approval, removing the need for a separate "Submit" button after editing.
 
-## How to Update GitHub
+### 3. UI/UX Improvements
+- Added clearer status indicators and icons for each workflow stage.
+- Improved the "Empty State" messages to guide users on what to expect in each tab.
+- Integrated "Automatic Resubmission" feedback so users know their changes were sent immediately.
+
+## Verification Results
+
+### Manual Verification
+1.  **Tab Filtering**: Confirmed that `Needs Revision` items only appear in the "Activity Corrections" tab.
+2.  **Date Revision**: Verified that clicking "Revise Schedule" skips the text form and goes straight to the calendar.
+3.  **Auto-Submit**: Confirmed that after selecting a new date, the item status changes to `Awaiting Date Approval` and moves back to the first tab.
+4.  **Isolation**: Verified that scheduled activities in the "Request Letters" tab are not affected by scheduling logic.
+
+## How to Deploy
 
 To see these changes on your live website:
 1. Open the **Commit** tab (`Ctrl + K`).
-2. Type a message like: `UI Cleanup: Rename phases in Event Tracker`.
+2. Type a message like: `UX: Simplify scheduling revisions with dedicated tab`.
 3. Select **Commit and Push**.
 
 > [!TIP]
-> After pushing, wait about 2 minutes and then perform a **Hard Refresh** (`Ctrl + F5`) on your browser to see the updates.
+> This "Date-First" approach prevents confusion and ensures that organizations can quickly fix scheduling conflicts without having to re-read their entire proposal.

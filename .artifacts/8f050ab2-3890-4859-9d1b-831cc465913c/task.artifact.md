@@ -1,16 +1,10 @@
 - [x] PDF Compatibility Improvement
-    - [x] Import `printing` and `pdf/widgets` (already there, but need Google Fonts)
-    - [x] Load Roboto fonts in `GPOAPdfGenerator`
-    - [x] Update all `pw.TextStyle` to use the loaded fonts
 - [x] GitHub & Automation Setup
-    - [x] Create `.github/workflows/deploy.yml` for GitHub Pages
-    - [x] Initialize Git repository locally
-    - [x] Stage and commit all files
 - [x] Refactor GPOA Navigation (Org Dashboard)
-    - [x] Rename "GPOA Status" to "Manage GPOA" in Sidebar
-    - [x] Remove "GPOA Submission" and "GPOA Report" from Sidebar
-    - [x] Add "New Proposal" and "Generate Report" buttons to Manage GPOA view
-    - [x] Add "Back" button to Submission and Report views
 - [x] Activity Workflow UI Cleanup
-    - [x] Update header title/description in `_OrgViewEventsView`
-    - [x] Rename Tab items to remove "Phase" labels
+- [x] Separate Scheduling and Letters
+- [x] Refine Scheduling Revisions
+    - [x] Update `_MyEventsView` to use 3 tabs (Scheduling, Corrections, Letters)
+    - [x] Simplify "Revise" logic to only trigger date/time picker
+    - [x] Update `_buildAction` to handle automatic resubmission
+    - [x] Remove unused `_showEditDialog` if applicable
