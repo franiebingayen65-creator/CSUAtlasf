@@ -1,28 +1,48 @@
-# Implementation Plan - Refine Scheduling Revisions
+# Implementation Plan - CSC Scoring System
 
-The goal is to simplify the revision process within the "Scheduling & Letters" navigation by introducing a dedicated "Revisions" tab and limiting corrections to only the event schedule (date/time).
+Add a comprehensive scoring system for the "Most Outstanding College Student Council Organization" based on the university's criteria. This will allow administrators to evaluate organizations and automatically calculate their total scores and ratings.
+
+## User Review Required
+
+> [!IMPORTANT]
+> This feature introduces a new evaluation system. We will add a dedicated interface in the "Add Scores" section for admins to input evaluation data.
+> The scoring logic follows the 10 categories (I to X) provided in the reference images.
 
 ## Proposed Changes
 
-### Organization Dashboard
+### Database Schema
+I will assume the existence of or create a mechanism to persist these evaluations.
+Table: `organization_evaluations`
+- Categories I-X as individual score columns.
+- `grand_total`, `adjectival_rating`, and `school_year`.
 
-#### [MODIFY] [org_dashboard.dart](file:///C:/CSUAtlasf/lib/org_dashboard.dart)
-- Update `_MyEventsView` to use **three tabs**:
-    1.  **"Event Scheduling"**: For activities with status `Approved` or `Awaiting Date Approval`.
-    2.  **"Activity Corrections"**: For activities with status `Needs Revision`.
-    3.  **"Request Letters"**: For activities with status `Scheduled`.
-- Modify the "Revise" action for items in the **Activity Corrections** tab:
-    - Instead of allowing full text edits, it will open the **Date and Time picker**.
-    - After picking a new date, the activity will be resubmitted with the status set back to `Awaiting Date Approval`.
-- Update internal filtering logic (`schedulingList`, `revisionList`, `letterList`) to support the new three-tab layout.
+### Admin Dashboard
+#### [MODIFY] `lib/admin_dashboard.dart`
+- **Implement `_AddScoresView`**:
+    - Add organization selection dropdown.
+    - Create an input form with fields for each category.
+    - Implement automatic calculation logic that updates the total score and adjectival rating as values are entered.
+    - Add validation to ensure scores do not exceed category maximums.
+    - Add a "Save Evaluation" button.
+
+### Adjectival Rating Logic
+Based on common academic standards (to be confirmed/refined):
+- 95-100: Outstanding
+- 90-94: Very Satisfactory
+- 85-89: Satisfactory
+- 80-84: Fair
+- Below 80: Poor
 
 ## Verification Plan
 
 ### Manual Verification
-1.  Navigate to "Scheduling & Letters".
-2.  Verify there are now **three tabs** at the top.
-3.  Ensure items with status `Needs Revision` appear in the "Activity Corrections" tab.
-4.  Click the "Revise" button on an item in the corrections tab.
-5.  Verify that it only prompts for a **Date and Time**, not a full form.
-6.  Confirm that after saving, the item moves to the "Event Scheduling" tab with a "Pending" or "Awaiting Approval" label.
-7.  Verify that the "Request Letters" tab remains isolated for `Scheduled` activities.
+1. Log in as Admin.
+2. Go to "Add Scores" view.
+3. Select an organization.
+4. Input sample scores for each category:
+    - I: 8.5
+    - II: 9.0
+    - ...
+5. Verify "Grand Total" updates automatically.
+6. Verify "Adjectival Rating" updates based on the total.
+7. Click "Save" and verify data persistence (fetch back on selection).

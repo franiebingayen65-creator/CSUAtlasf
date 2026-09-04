@@ -1,10 +1,11 @@
-- [x] PDF Compatibility Improvement
-- [x] GitHub & Automation Setup
-- [x] Refactor GPOA Navigation (Org Dashboard)
-- [x] Activity Workflow UI Cleanup
-- [x] Separate Scheduling and Letters
-- [x] Refine Scheduling Revisions
-    - [x] Update `_MyEventsView` to use 3 tabs (Scheduling, Corrections, Letters)
-    - [x] Simplify "Revise" logic to only trigger date/time picker
-    - [x] Update `_buildAction` to handle automatic resubmission
-    - [x] Remove unused `_showEditDialog` if applicable
+- [x] CSC Scoring System Implementation
+    - [x] Create UI for `_AddScoresView` in `lib/admin_dashboard.dart`
+    - [x] Add category input fields with max point validation
+    - [x] Implement automatic total score calculation logic
+    - [x] Implement adjectival rating logic
+    - [x] Add persistence logic (Save to Supabase)
+    - [x] Add data fetching logic (Load existing evaluations)
+- [x] Ranking View Implementation
+    - [x] Fetch all evaluations for the selected School Year
+    - [x] Display organizations sorted by Grand Total
+    - [x] Show adjectival ratings in the ranking list

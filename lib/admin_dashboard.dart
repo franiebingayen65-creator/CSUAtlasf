@@ -1611,11 +1611,666 @@ class _AccomplishmentReportsView extends StatelessWidget {
   }
 }
 
-class _AddScoresView extends StatelessWidget {
-  final List<Map<String, dynamic>> activities; final List<Map<String, dynamic>> organizations; final VoidCallback onRefresh;
+class _AddScoresView extends StatefulWidget {
+  final List<Map<String, dynamic>> activities;
+  final List<Map<String, dynamic>> organizations;
+  final VoidCallback onRefresh;
   const _AddScoresView({required this.activities, required this.organizations, required this.onRefresh});
+
   @override
-  Widget build(BuildContext context) { return const Center(child: Text('Scoring coming soon.')); }
+  State<_AddScoresView> createState() => _AddScoresViewState();
+}
+
+class _AddScoresViewState extends State<_AddScoresView> {
+  String? _selectedOrgId;
+  final String _schoolYear = '2025-2026';
+  bool _isSaving = false;
+
+  final Map<String, TextEditingController> _controllers = {
+    'i': TextEditingController(text: '0'),
+    'ii': TextEditingController(text: '0'),
+    'iii': TextEditingController(text: '0'),
+    'iv': TextEditingController(text: '0'),
+    'v': TextEditingController(text: '0'),
+    'vi': TextEditingController(text: '0'),
+    'vii': TextEditingController(text: '0'),
+    'viii': TextEditingController(text: '0'),
+    'ix': TextEditingController(text: '0'),
+    'x': TextEditingController(text: '0'),
+  };
+
+  double get grandTotal {
+    double total = 0;
+    _controllers.forEach((key, controller) {
+      total += double.tryParse(controller.text) ?? 0;
+    });
+    return total;
+  }
+
+  String get adjectivalRating {
+    double total = grandTotal;
+    if (total >= 96) return 'Outstanding';
+    if (total >= 86) return 'Very Satisfactory';
+    if (total >= 76) return 'Satisfactory';
+    if (total >= 66) return 'Fair';
+    return 'Poor';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    for (var controller in _controllers.values) {
+      controller.addListener(() { if (mounted) setState(() {}); });
+    }
+  }
+
+  @override
+  void dispose() {
+    for (var controller in _controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _loadEvaluation() async {
+    if (_selectedOrgId == null) return;
+    try {
+      final res = await Supabase.instance.client
+          .from('organization_evaluations')
+          .select()
+          .eq('organization_id', _selectedOrgId!)
+          .eq('school_year', _schoolYear)
+          .maybeSingle();
+
+      if (res != null) {
+        setState(() {
+          _controllers['i']!.text = (res['score_i'] ?? 0).toString();
+          _controllers['ii']!.text = (res['score_ii'] ?? 0).toString();
+          _controllers['iii']!.text = (res['score_iii'] ?? 0).toString();
+          _controllers['iv']!.text = (res['score_iv'] ?? 0).toString();
+          _controllers['v']!.text = (res['score_v'] ?? 0).toString();
+          _controllers['vi']!.text = (res['score_vi'] ?? 0).toString();
+          _controllers['vii']!.text = (res['score_vii'] ?? 0).toString();
+          _controllers['viii']!.text = (res['score_viii'] ?? 0).toString();
+          _controllers['ix']!.text = (res['score_ix'] ?? 0).toString();
+          _controllers['x']!.text = (res['score_x'] ?? 0).toString();
+        });
+      } else {
+        setState(() {
+          for (var c in _controllers.values) { c.text = '0'; }
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveEvaluation() async {
+    if (_selectedOrgId == null) {
+      AppUtils.showTopToast(context, 'Please select an organization first.', isError: true);
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      final data = {
+        'organization_id': _selectedOrgId,
+        'school_year': _schoolYear,
+        'score_i': double.tryParse(_controllers['i']!.text) ?? 0,
+        'score_ii': double.tryParse(_controllers['ii']!.text) ?? 0,
+        'score_iii': double.tryParse(_controllers['iii']!.text) ?? 0,
+        'score_iv': double.tryParse(_controllers['iv']!.text) ?? 0,
+        'score_v': double.tryParse(_controllers['v']!.text) ?? 0,
+        'score_vi': double.tryParse(_controllers['vi']!.text) ?? 0,
+        'score_vii': double.tryParse(_controllers['vii']!.text) ?? 0,
+        'score_viii': double.tryParse(_controllers['viii']!.text) ?? 0,
+        'score_ix': double.tryParse(_controllers['ix']!.text) ?? 0,
+        'score_x': double.tryParse(_controllers['x']!.text) ?? 0,
+        'grand_total': grandTotal,
+        'adjectival_rating': adjectivalRating,
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+
+      await Supabase.instance.client.from('organization_evaluations').upsert(data, onConflict: 'organization_id,school_year');
+      if (mounted) {
+        AppUtils.showTopToast(context, 'Evaluation record updated successfully!');
+        widget.onRefresh();
+      }
+    } catch (e) {
+      if (mounted) AppUtils.showTopToast(context, 'Error: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      child: Center(
+        child: Column(
+          children: [
+            _buildTopPanel(),
+            const SizedBox(height: 32),
+            _buildFolioPage(1, _buildPage1Content()),
+            const SizedBox(height: 40),
+            _buildFolioPage(2, _buildPage2Content()),
+            const SizedBox(height: 40),
+            _buildFolioPage(3, _buildPage3Content()),
+            const SizedBox(height: 40),
+            _buildFolioPage(4, _buildPage4Content()),
+            const SizedBox(height: 40),
+            _buildFolioPage(5, _buildPage5Content()),
+            const SizedBox(height: 100),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopPanel() {
+    return Container(
+      width: 850,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10)]),
+      child: Row(
+        children: [
+          const Icon(Icons.stars_rounded, color: Color(0xFF6366F1), size: 28),
+          const SizedBox(width: 16),
+          const Text('CSC EVALUATION PANEL', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF1E293B))),
+          const SizedBox(width: 40),
+          SizedBox(
+            width: 300,
+            child: DropdownButtonFormField<String>(
+              initialValue: _selectedOrgId,
+              hint: const Text('Select Organization'),
+              decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 16)),
+              items: widget.organizations.map((o) => DropdownMenuItem(value: o['id'].toString(), child: Text(o['name'] ?? '', overflow: TextOverflow.ellipsis))).toList(),
+              onChanged: (val) { setState(() => _selectedOrgId = val); _loadEvaluation(); },
+            ),
+          ),
+          const SizedBox(width: 16),
+          ElevatedButton.icon(
+            onPressed: _isSaving ? null : _saveEvaluation,
+            icon: _isSaving ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.save_rounded),
+            label: const Text('Commit Record'),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFolioPage(int num, Widget content) {
+    return Container(
+      width: 850,
+      constraints: const BoxConstraints(minHeight: 1300),
+      padding: const EdgeInsets.all(60),
+      decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.grey.shade300), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 20, offset: const Offset(0, 10))]),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildFolioHeader(),
+          const SizedBox(height: 30),
+          content,
+          const SizedBox(height: 60),
+          const Divider(color: Colors.black, thickness: 1.5),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('$num | P a g e', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+              const Text('Search for the Most Outstanding College Student Council Organization SY 2025-2026', style: TextStyle(fontSize: 9, fontStyle: FontStyle.italic)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFolioHeader() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Image.asset('assets/images/csulogo.png', height: 80, errorBuilder: (c, e, s) => const Icon(Icons.school, size: 80, color: Colors.red)),
+        const SizedBox(width: 15),
+        const SizedBox(
+          width: 485,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text('REPUBLIC OF THE PHILIPPINES', style: TextStyle(fontSize: 10, color: Color(0xFFB71C1C), fontWeight: FontWeight.bold)),
+              Text('CAGAYAN STATE UNIVERSITY', style: TextStyle(fontSize: 16, color: Color(0xFFB71C1C), fontWeight: FontWeight.w900)),
+              Text('ANDREWS CAMPUS', style: TextStyle(fontSize: 12, color: Color(0xFFB71C1C), fontWeight: FontWeight.bold)),
+              Text('Caritan, Tuguegarao City, Cagayan', style: TextStyle(fontSize: 10, color: Color(0xFFB71C1C))),
+            ],
+          ),
+        ),
+        const SizedBox(width: 15),
+        const Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text('Email Address: osdw@csu.edu.ph', style: TextStyle(fontSize: 9)),
+            Text('Website: www.csu.edu.ph', style: TextStyle(fontSize: 9)),
+            Text('Facebook Page: Osdw Andrews', style: TextStyle(fontSize: 9)),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPage1Content() {
+    final org = widget.organizations.firstWhere((o) => o['id'].toString() == _selectedOrgId, orElse: () => {'name': '________________'});
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Center(
+          child: Column(
+            children: [
+              Text('OFFICE OF STUDENT DEVELOPMENT AND WELFARE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, decoration: TextDecoration.underline)),
+              SizedBox(height: 4),
+              Text('CRITERIA FOR THE SEARCH FOR OUTSTANDING COLLEGE STUDENT COUNCIL SY 2025-2026', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 0.5)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 40),
+        Row(
+          children: [
+            SizedBox(width: 350, child: _buildInfoField('Organization:', org['name'].toString().toUpperCase())),
+            const SizedBox(width: 20),
+            SizedBox(width: 350, child: _buildInfoField('Points:', grandTotal.toStringAsFixed(2))),
+          ],
+        ),
+        Row(
+          children: [
+            SizedBox(width: 350, child: _buildInfoField('Campus:', 'ANDREWS CAMPUS')),
+            const SizedBox(width: 20),
+            SizedBox(width: 350, child: _buildInfoField('Adjectival Rating:', adjectivalRating.toUpperCase())),
+          ],
+        ),
+        const SizedBox(height: 40),
+        const Center(child: Text('I. & II. ACTIVITIES CONDUCTED / SPONSORED', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, decoration: TextDecoration.underline))),
+        const SizedBox(height: 25),
+        _buildPage1Matrix(),
+      ],
+    );
+  }
+
+  Widget _buildInfoField(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+          const SizedBox(width: 10),
+          Container(width: 200, padding: const EdgeInsets.only(bottom: 2), decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.black))), child: Text(value, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPage1Matrix() {
+    return Table(
+      border: TableBorder.all(color: Colors.black),
+      columnWidths: const {
+        0: FixedColumnWidth(130),
+        1: FixedColumnWidth(110),
+        2: FlexColumnWidth(1),
+        3: FlexColumnWidth(1),
+        4: FlexColumnWidth(1),
+        5: FlexColumnWidth(1),
+        6: FlexColumnWidth(1),
+        7: FlexColumnWidth(1),
+        8: FixedColumnWidth(70),
+      },
+      children: [
+        _buildMatrixIAndIIHeader(),
+        _buildMatrixCriteriaRow(['3', '2.5'], ['3', '2.5'], ['5', '2.5'], ['5', '2.0'], ['5', '1.5'], ['7', '2.5']),
+        _buildMatrixCriteriaRow(['2', '2.0'], ['2', '2.0'], ['4', '2.0'], ['4', '1.5'], ['4', '1.0'], ['6', '2.0']),
+        _buildMatrixCriteriaRow(['1', '1.5'], ['1', '1.5'], ['3', '1.5'], ['3', '1.0'], ['3', '0.5'], ['5', '1.5']),
+        TableRow(
+          children: [
+            const TableCell(
+              verticalAlignment: TableCellVerticalAlignment.middle,
+              child: Padding(
+                padding: EdgeInsets.all(6),
+                child: Text('Note: Attendance should be 50%+1 of the total target participants.', style: TextStyle(fontSize: 7.5, fontStyle: FontStyle.italic, fontWeight: FontWeight.bold)),
+              ),
+            ),
+            const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(),
+          ],
+        ),
+        _buildMatrixActivityRow('I. Symposium/ Seminars Conducted (10 pts)\nMax Activities: 4', 'i'),
+        _buildMatrixActivityRow('II. Convocations/ Programs and Literary Activities (10 pts)\nMax Activities: 4', 'ii'),
+      ],
+    );
+  }
+
+  TableRow _buildMatrixIAndIIHeader() {
+    return TableRow(
+      decoration: BoxDecoration(color: Colors.grey.shade200),
+      children: [
+        const TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: Center(child: Text('Activities', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold)))),
+        const TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: Center(child: Text('Supporting Docs', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold)))),
+        for (final l in ['Int\'l', 'Nat\'l', 'Reg\'l', 'Univ', 'Camp', 'Coll'])
+          TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: Column(children: [
+            Center(child: Padding(padding: const EdgeInsets.all(2), child: Text(l, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold)))),
+            const Divider(height: 1, color: Colors.black),
+            Row(children: [
+              SizedBox(width: 30, child: Center(child: Text('No. of SDGs', style: const TextStyle(fontSize: 5, fontWeight: FontWeight.bold)))),
+              Container(width: 1, height: 10, color: Colors.black),
+              SizedBox(width: 20, child: Center(child: Text('Pts', style: const TextStyle(fontSize: 5, fontWeight: FontWeight.bold)))),
+            ])
+          ])),
+        const TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: Center(child: Text('Pts', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold)))),
+      ],
+    );
+  }
+
+  TableRow _buildMatrixCriteriaRow(List<String> l1, List<String> l2, List<String> l3, List<String> l4, List<String> l5, List<String> l6) {
+    return TableRow(
+      children: [
+        const SizedBox(), const SizedBox(),
+        for (final pair in [l1, l2, l3, l4, l5, l6])
+          Center(child: Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: Row(children: [
+            SizedBox(width: 25, child: Center(child: Text(pair[0], style: const TextStyle(fontSize: 7.5)))),
+            Container(width: 0.5, height: 10, color: Colors.black26),
+            SizedBox(width: 20, child: Center(child: Text(pair[1], style: const TextStyle(fontSize: 7.5, fontWeight: FontWeight.bold)))),
+          ]))),
+        const SizedBox(),
+      ],
+    );
+  }
+
+  TableRow _buildMatrixActivityRow(String title, String key) {
+    return TableRow(
+      children: [
+        Padding(padding: const EdgeInsets.all(8), child: Text(title, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold))),
+        const Padding(padding: EdgeInsets.all(8), child: Text('• Approved letter\n• Narrative Report\n• Attendance Sheet\n• Program/ Invitation', style: TextStyle(fontSize: 7.5))),
+        for (var i = 0; i < 6; i++)
+          TableCell(
+            verticalAlignment: TableCellVerticalAlignment.middle,
+            child: SizedBox(
+              height: 70,
+              child: Row(
+                children: [
+                  Container(width: 25, decoration: const BoxDecoration(border: Border(right: BorderSide(color: Colors.black54, width: 0.5)))),
+                  const SizedBox(width: 25),
+                ],
+              ),
+            ),
+          ),
+        TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: _buildIntegratedInput(key)),
+      ],
+    );
+  }
+
+  Widget _buildPage2Content() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Center(child: Text('III, IV, V, & VI. CATEGORICAL EVALUATION MATRIX', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, decoration: TextDecoration.underline))),
+        const SizedBox(height: 25),
+        _buildCategoricalMatrix(),
+        const SizedBox(height: 20),
+        const Text('Note: Every activity must be anchored to at least one (1) SDG.', style: TextStyle(fontSize: 9, fontStyle: FontStyle.italic, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  Widget _buildCategoricalMatrix() {
+    return Table(
+      border: TableBorder.all(color: Colors.black),
+      columnWidths: const {
+        0: FixedColumnWidth(130),
+        1: FixedColumnWidth(110),
+        2: FlexColumnWidth(1), 3: FlexColumnWidth(1),
+        4: FlexColumnWidth(1), 5: FlexColumnWidth(1),
+        6: FlexColumnWidth(1), 7: FlexColumnWidth(1),
+        8: FixedColumnWidth(70),
+      },
+      children: [
+        _buildMatrixIAndIIHeader(),
+        _buildCategoricalRow('III. Religious Activities (5 pts)\nMax Activities: 3', 'Approved Letter, Narrative Report, Certification from Parish Priest/ Minister', 'iii'),
+        _buildCategoricalRow('IV. Socio-Cultural and Sports Activities (10 pts)\nMax Activities: 4', 'Approved Letter, Narrative Report, Pictorials, Result of Competition', 'iv'),
+        _buildCategoricalRow('V. Maka-kalikasan/ Clean and Green Activities (10 pts)\nMax Activities: 4', 'Office Order, MOA/MOU, Certification from Barangay/ Agency', 'v'),
+        _buildCategoricalRow('VI. Extension Services Sponsored/ Conducted (10 pts)\nMax Activities: 4', 'Approved Letter, Certification from Recipient/ Agency, Narrative Report', 'vi'),
+      ],
+    );
+  }
+
+  TableRow _buildCategoricalRow(String title, String docs, String key) {
+    return TableRow(
+      children: [
+        Padding(padding: const EdgeInsets.all(6), child: Text(title, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold))),
+        Padding(padding: const EdgeInsets.all(6), child: Text(docs, style: const TextStyle(fontSize: 7))),
+        for (var i = 0; i < 6; i++)
+          TableCell(
+            verticalAlignment: TableCellVerticalAlignment.middle,
+            child: SizedBox(
+              height: 70,
+              child: Row(
+                children: [
+                  Container(width: 25, decoration: const BoxDecoration(border: Border(right: BorderSide(color: Colors.black54, width: 0.5)))),
+                  const SizedBox(width: 25),
+                ],
+              ),
+            ),
+          ),
+        TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: _buildIntegratedInput(key)),
+      ],
+    );
+  }
+
+  Widget _buildPage3Content() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('VII. Tangible/ Physical Projects (15 pts)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+        const Text('• Accumulated amount. CSC office equipment alone not credited.', style: TextStyle(fontSize: 9, fontStyle: FontStyle.italic)),
+        const SizedBox(height: 15),
+        _buildMappingTable([
+          ['140,001 and above', '15.0'], ['130,001 - 140,000', '14.0'],
+          ['120,001 - 130,000', '13.0'], ['110,001 - 120,000', '12.0'],
+          ['100,001 - 110,000', '11.0'], ['90,001 - 100,000', '10.0'],
+          ['80,001 - 90,000', '9.0'], ['70,001 - 80,000', '8.0'],
+          ['60,001 - 70,000', '7.0'], ['50,001 - 60,000', '6.0'],
+          ['40,001 - 50,000', '5.0'], ['30,001 - 40,000', '4.0'],
+          ['20,001 - 30,000', '3.0'], ['10,001 - 20,000', '2.0'],
+          ['Below 10,000', '1.0'],
+        ], scoreKey: 'vii'),
+        const SizedBox(height: 40),
+        const Text('VIII. Fund Drive/ IGP (10 pts)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+        const SizedBox(height: 15),
+        _buildMappingTable([
+          ['20,001 and above', '10.0'], ['15,001 - 20,000', '8.0'],
+          ['10,001 - 15,000', '6.0'], ['5,001 - 10,000', '4.0'],
+          ['Below 5,000', '2.0'],
+        ], scoreKey: 'viii'),
+      ],
+    );
+  }
+
+  Widget _buildPage4Content() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('IX. Financial Assistance (10 pts)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+        const SizedBox(height: 15),
+        _buildMappingTable([
+          ['10,001 and above', '10.0'], ['7,501 - 10,000', '8.0'],
+          ['5,001 - 7,500', '6.0'], ['2,501 - 5,000', '4.0'],
+          ['Below 2,500', '2.0'],
+        ], scoreKey: 'ix'),
+        const SizedBox(height: 40),
+        const Text('X. Action Plan Implementation (10 pts)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+        const SizedBox(height: 15),
+        _buildMappingTable([
+          ['94% - 100%', '10.0'], ['84% - 93%', '8.0'],
+          ['74% - 83%', '6.0'], ['64% - 73%', '4.0'],
+          ['Below 64%', '2.0'],
+        ], scoreKey: 'x'),
+        const SizedBox(height: 50),
+        const Center(child: Text('FINAL SCORE SUMMARY', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 2))),
+        const SizedBox(height: 25),
+        _buildFinalSummaryTable(),
+        const SizedBox(height: 40),
+        _buildGrandTotalRow(),
+      ],
+    );
+  }
+
+  Widget _buildFinalSummaryTable() {
+    return Table(
+      border: TableBorder.all(color: Colors.black, width: 2),
+      columnWidths: const {0: FlexColumnWidth(4), 1: FixedColumnWidth(100)},
+      children: [
+        TableRow(
+          decoration: BoxDecoration(color: Colors.grey.shade300),
+          children: [
+            const Padding(padding: EdgeInsets.all(12), child: Text('SUB-CATEGORIES', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1))),
+            const Center(child: Padding(padding: EdgeInsets.all(12), child: Text('SCORE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)))),
+          ],
+        ),
+        ...[
+          ['I. Symposium/ Seminars Conducted', 'i'],
+          ['II. Convocations/ Programs and Literary Activities', 'ii'],
+          ['III. Religious Activities', 'iii'],
+          ['IV. Socio-Cultural and Sports Activities', 'iv'],
+          ['V. Maka-kalikasan/ Clean and Green Activities', 'v'],
+          ['VI. Extension Services Sponsored/ Conducted', 'vi'],
+          ['VII. Tangible/ Physical Projects', 'vii'],
+          ['VIII. Fund Drive/ IGP', 'viii'],
+          ['IX. Financial Assistance', 'ix'],
+          ['X. Action Plan Implementation', 'x'],
+        ].map((s) => TableRow(children: [
+          Padding(padding: const EdgeInsets.all(12), child: Text(s[0], style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500))),
+          TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: _buildIntegratedInput(s[1])),
+        ])),
+      ],
+    );
+  }
+
+  Widget _buildGrandTotalRow() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        const Text('Grand Total Score Achieved:', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+        const SizedBox(width: 20),
+        Container(
+          width: 150,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.black, width: 2))),
+          child: Center(child: Text(grandTotal.toStringAsFixed(2), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF6366F1)))),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPage5Content() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 60),
+        const Text('Certified True and Correct:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 80),
+        _buildSignatureGrid(),
+        const SizedBox(height: 120),
+        const Text('Noted:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 80),
+        _buildNotedBlock(),
+      ],
+    );
+  }
+
+  Widget _buildSignatureGrid() {
+    return Column(
+      children: [
+        Row(
+          children: [
+            SizedBox(width: 330, child: _buildSignatureLine()),
+            const SizedBox(width: 60),
+            SizedBox(width: 330, child: _buildSignatureLine()),
+          ],
+        ),
+        const SizedBox(height: 80),
+        Row(
+          children: [
+            SizedBox(width: 330, child: _buildSignatureLine()),
+            const SizedBox(width: 60),
+            SizedBox(width: 330, child: _buildSignatureLine()),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNotedBlock() {
+    return const Center(
+      child: Column(
+        children: [
+          Text('LORAINE SUYU-TATTAO, Ph.D.', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, decoration: TextDecoration.underline, letterSpacing: 0.5)),
+          Text('University Director', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+          Text('Office of the Student Development and Welfare', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMappingTable(List<List<String>> rows, {String? scoreKey}) {
+    return Table(
+      border: TableBorder.all(color: Colors.black),
+      columnWidths: const {0: FlexColumnWidth(3), 1: FixedColumnWidth(100)},
+      children: [
+        TableRow(
+          decoration: BoxDecoration(color: Colors.grey.shade100),
+          children: [
+            const Center(child: Padding(padding: EdgeInsets.all(8), child: Text('Amount / Range / Percentage', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)))),
+            const Center(child: Padding(padding: EdgeInsets.all(8), child: Text('Points', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)))),
+          ],
+        ),
+        ...rows.map((r) => TableRow(children: [
+          Center(child: Padding(padding: const EdgeInsets.all(6), child: Text(r[0], style: const TextStyle(fontSize: 9)))),
+          Center(child: Padding(padding: const EdgeInsets.all(6), child: Text(r[1], style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)))),
+        ])),
+        if (scoreKey != null)
+          TableRow(
+            decoration: BoxDecoration(color: Colors.blue.shade50),
+            children: [
+              const Padding(padding: EdgeInsets.all(10), child: Text('Actual Score achieved based on rubric:', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
+              TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: _buildIntegratedInput(scoreKey)),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _buildIntegratedInput(String key) {
+    return TextField(
+      controller: _controllers[key],
+      textAlign: TextAlign.center,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF6366F1)),
+      decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4)),
+    );
+  }
+
+  Widget _buildSignatureLine() {
+    return Column(
+      children: [
+        Container(height: 1.5, color: Colors.black),
+        const SizedBox(height: 6),
+        const Text('Signature over Printed Name of Evaluator', style: TextStyle(fontSize: 9, fontStyle: FontStyle.italic, fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+}
+
+
+class GuideItem extends StatelessWidget {
+  final String label, desc;
+  const GuideItem({super.key, required this.label, required this.desc});
+  @override
+  Widget build(BuildContext context) {
+    return Padding(padding: const EdgeInsets.only(bottom: 8), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF6366F1))), Text(desc, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)))]));
+  }
 }
 
 class _ManageReAccreditationView extends StatelessWidget {
@@ -1624,11 +2279,133 @@ class _ManageReAccreditationView extends StatelessWidget {
   Widget build(BuildContext context) { return const Center(child: Text('Re-Accreditation coming soon.')); }
 }
 
-class _RankingsView extends StatelessWidget {
+class _RankingsView extends StatefulWidget {
   final List<Map<String, dynamic>> organizations;
   const _RankingsView({required this.organizations});
+
   @override
-  Widget build(BuildContext context) { return const Center(child: Text('Rankings coming soon.')); }
+  State<_RankingsView> createState() => _RankingsViewState();
+}
+
+class _RankingsViewState extends State<_RankingsView> {
+  String _schoolYear = '2025-2026';
+  List<Map<String, dynamic>> _evaluations = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchRankings();
+  }
+
+  Future<void> _fetchRankings() async {
+    setState(() => _isLoading = true);
+    try {
+      final res = await Supabase.instance.client
+          .from('organization_evaluations')
+          .select('*, organizations(name)')
+          .eq('school_year', _schoolYear)
+          .order('grand_total', ascending: false);
+      
+      if (mounted) {
+        setState(() {
+          _evaluations = List<Map<String, dynamic>>.from(res);
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(40),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Leaderboard & Rankings', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Color(0xFF0F172A), letterSpacing: -1)),
+                  Text('Top performing College Student Councils based on annual evaluations.', style: TextStyle(color: Color(0xFF64748B), fontSize: 16)),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.withValues(alpha: 0.1))),
+                child: DropdownButton<String>(
+                  value: _schoolYear,
+                  underline: const SizedBox(),
+                  items: ['2024-2025', '2025-2026', '2026-2027'].map((sy) => DropdownMenuItem(value: sy, child: Text('SY $sy'))).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() => _schoolYear = val);
+                      _fetchRankings();
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 48),
+          Expanded(
+            child: _isLoading 
+              ? const Center(child: CircularProgressIndicator())
+              : _evaluations.isEmpty
+                ? const Center(child: Text('No evaluations found for this school year.'))
+                : ListView.builder(
+                    itemCount: _evaluations.length,
+                    itemBuilder: (context, index) {
+                      final eval = _evaluations[index];
+                      final orgName = eval['organizations']?['name'] ?? 'Unknown Org';
+                      final total = eval['grand_total'] ?? 0;
+                      final rating = eval['adjectival_rating'] ?? 'N/A';
+                      
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey.withValues(alpha: 0.1))),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 48,
+                              height: 48,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(color: index < 3 ? Colors.orange.withValues(alpha: 0.1) : const Color(0xFFF1F5F9), shape: BoxShape.circle),
+                              child: Text('${index + 1}', style: TextStyle(fontWeight: FontWeight.bold, color: index < 3 ? Colors.orange : const Color(0xFF64748B))),
+                            ),
+                            const SizedBox(width: 24),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(orgName.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF1E293B))),
+                                  Text(rating, style: const TextStyle(fontSize: 12, color: Color(0xFF6366F1), fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                const Text('TOTAL SCORE', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8), fontWeight: FontWeight.w800)),
+                                Text(total.toStringAsFixed(2), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _AdminViewOrgProfileDialog extends StatefulWidget {
