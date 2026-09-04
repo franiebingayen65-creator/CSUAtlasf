@@ -88,34 +88,42 @@ class GPOAActivityDetailsView extends StatelessWidget {
                     StatusBadge(status: status),
                   ],
                 ),
-                if (!isCleared && onStatusUpdate != null && status != 'Needs Revision') ...[
+                if (!isCleared && onStatusUpdate != null) ...[
                   const SizedBox(height: 32),
-                  Row(
-                    children: [
-                      _ActionButton(
-                        onPressed: () => onStatusUpdate!('Endorsed'),
-                        icon: Icons.check_circle_rounded,
-                        label: 'Endorse Proposal',
-                        color: const Color(0xFF10B981),
-                      ),
-                      const SizedBox(width: 12),
-                      _ActionButton(
-                        onPressed: () => onStatusUpdate!('Needs Revision'),
-                        icon: Icons.history_edu_rounded,
-                        label: 'Return for Revision',
-                        color: const Color(0xFFF59E0B),
-                        isOutlined: true,
-                      ),
-                      const SizedBox(width: 12),
-                      _ActionButton(
-                        onPressed: () => onStatusUpdate!('Rejected'),
-                        icon: Icons.cancel_rounded,
-                        label: 'Reject',
-                        color: const Color(0xFFEF4444),
-                        isOutlined: true,
-                      ),
-                    ],
-                  ),
+                  if (status == 'Needs Revision')
+                    _ActionButton(
+                      onPressed: () => onStatusUpdate!('Pending'),
+                      icon: Icons.send_rounded,
+                      label: 'Resubmit for Review',
+                      color: const Color(0xFF6366F1),
+                    )
+                  else
+                    Row(
+                      children: [
+                        _ActionButton(
+                          onPressed: () => onStatusUpdate!(status == 'Endorsed' ? 'Approved' : 'Endorsed'),
+                          icon: Icons.check_circle_rounded,
+                          label: status == 'Endorsed' ? 'Approve GPOA' : 'Endorse Proposal',
+                          color: const Color(0xFF10B981),
+                        ),
+                        const SizedBox(width: 12),
+                        _ActionButton(
+                          onPressed: () => onStatusUpdate!('Needs Revision'),
+                          icon: Icons.history_edu_rounded,
+                          label: 'Return for Revision',
+                          color: const Color(0xFFF59E0B),
+                          isOutlined: true,
+                        ),
+                        const SizedBox(width: 12),
+                        _ActionButton(
+                          onPressed: () => onStatusUpdate!('Rejected'),
+                          icon: Icons.cancel_rounded,
+                          label: 'Reject',
+                          color: const Color(0xFFEF4444),
+                          isOutlined: true,
+                        ),
+                      ],
+                    ),
                 ],
               ],
             ),

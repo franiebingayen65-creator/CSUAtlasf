@@ -816,7 +816,7 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
                       onChanged: (val) => setState(() => _selectedOrgId = val),
                       items: [
                         const DropdownMenuItem(value: null, child: Text('All Organizations', style: TextStyle(fontWeight: FontWeight.bold))),
-                        ...widget.organizations.map((org) => DropdownMenuItem(value: org['id'], child: Text(org['name'] ?? 'Unknown Org'))),
+                        ...widget.organizations.map((org) => DropdownMenuItem(value: org['id'].toString(), child: Text(org['name'] ?? 'Unknown Org'))),
                       ],
                     ),
                   ),
@@ -931,7 +931,7 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
                     status: act['status'] ?? 'Pending',
                     createdAt: AppUtils.formatDateTime(act['created_at']),
                     proposedDate: act['proposed_date'] != null ? AppUtils.formatDateTime(act['proposed_date']) : null,
-                    onStatusUpdate: act['status'] == 'Endorsed' ? (s) async {
+                    onStatusUpdate: (act['status'] == 'Endorsed' || act['status'] == 'Needs Revision') ? (s) async {
                       if (s == 'Needs Revision' || s == 'Rejected') {
                         final remarkController = TextEditingController();
                         final isReject = s == 'Rejected';
@@ -952,7 +952,7 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
                       } else {
                         try {
                           await Supabase.instance.client.from('activities').update({'status': s}).eq('id', act['id']);
-                          if (context.mounted) { AppUtils.showTopToast(context, 'Activity approved!'); Navigator.pop(context); }
+                          if (context.mounted) { AppUtils.showTopToast(context, s == 'Approved' ? 'GPOA approved and moved to scheduling!' : 'Status updated.'); Navigator.pop(context); }
                           widget.onRefresh();
                         } catch (e) { if (context.mounted) AppUtils.showTopToast(context, 'Error: $e', isError: true); }
                       }
@@ -2505,7 +2505,11 @@ class _GPOAReportsView extends StatelessWidget {
               itemCount: organizations.length,
               itemBuilder: (context, index) {
                 final org = organizations[index];
-                final orgActivities = activities.where((a) => a['organization_id']?.toString() == org['id'].toString()).toList();
+                final orgActivities = activities.where((a) {
+                  final isOrg = a['organization_id']?.toString() == org['id'].toString();
+                  final isApproved = ['Approved', 'Scheduled', 'Completed'].contains(a['status']);
+                  return isOrg && isApproved;
+                }).toList();
                 
                 return Container(
                   decoration: BoxDecoration(
@@ -2526,7 +2530,7 @@ class _GPOAReportsView extends StatelessWidget {
                               child: const Icon(Icons.business_rounded, color: Color(0xFF6366F1), size: 20),
                             ),
                             const Spacer(),
-                            Text('${orgActivities.length} Activities', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+                            Text('${orgActivities.length} Approved', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green)),
                           ],
                         ),
                         const SizedBox(height: 16),
@@ -2535,7 +2539,7 @@ class _GPOAReportsView extends StatelessWidget {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton.icon(
-                            onPressed: () => _printGPOA(context, org, orgActivities),
+                            onPressed: orgActivities.isEmpty ? null : () => _printGPOA(context, org, orgActivities),
                             icon: const Icon(Icons.print_rounded, size: 16),
                             label: const Text('Generate Report'),
                             style: ElevatedButton.styleFrom(

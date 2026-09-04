@@ -210,11 +210,11 @@ class _OrgDashboardState extends State<OrgDashboard> {
       case 'GPOA Submission':
         return _GPOASubmissionView(orgId: _orgData!['id'], onBack: () => setState(() => _activePage = 'Manage GPOA'));
       case 'Manage GPOA':
-        return _GPOAStatusGridView(activities: _myActivities, onAction: (page) => setState(() => _activePage = page), userRole: _userRole ?? 'President');
+        return _GPOAStatusGridView(activities: _myActivities, onAction: (page) => setState(() => _activePage = page), userRole: _userRole ?? 'President', onRefresh: _fetchOrgData);
       case 'GPOA Review':
         return _GPOAReviewView(activities: _myActivities, onRefresh: _fetchOrgData);
       case 'View Events':
-        return _OrgViewEventsView(activities: _myActivities);
+        return _OrgViewEventsView(activities: _myActivities, onRefresh: _fetchOrgData);
       case 'Scheduling & Letters':
         return _MyEventsView(activities: _myActivities, onRefresh: _fetchOrgData, userRole: _userRole ?? 'President');
       case 'GPOA Report':
@@ -581,7 +581,7 @@ class _OrgDashboardContent extends StatelessWidget {
                               ),
                               child: ListTile(
                                 contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                                onTap: () => _showActivityDetails(context, activity),
+                                onTap: () => _showActivityDetails(context, activity, onRefresh),
                                 leading: Container(
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(16)),
@@ -615,7 +615,7 @@ class _OrgDashboardContent extends StatelessWidget {
     );
   }
 
-  void _showActivityDetails(BuildContext context, Map<String, dynamic> activity) {
+  void _showActivityDetails(BuildContext context, Map<String, dynamic> activity, VoidCallback onRefresh) {
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -638,6 +638,17 @@ class _OrgDashboardContent extends StatelessWidget {
               status: activity['status'] ?? 'Pending',
               createdAt: AppUtils.formatDateTime(activity['created_at']),
               proposedDate: activity['proposed_date'] != null ? AppUtils.formatDateTime(activity['proposed_date']) : null,
+              onStatusUpdate: activity['status'] == 'Needs Revision' ? (s) async {
+                try {
+                  await Supabase.instance.client.from('activities').update({'status': 'Pending'}).eq('id', activity['id']);
+                  if (!context.mounted) return;
+                  AppUtils.showTopToast(context, 'Activity resubmitted for review.');
+                  onRefresh();
+                  Navigator.pop(context);
+                } catch (e) {
+                  if (context.mounted) AppUtils.showTopToast(context, 'Error: $e', isError: true);
+                }
+              } : null,
             ),
           ),
         ),
@@ -1248,7 +1259,7 @@ class _MyEventsView extends StatelessWidget {
                     ],
                   ),
                 ),
-                IconButton(onPressed: () => _showActivityDetails(context, event), icon: const Icon(Icons.info_outline_rounded, color: Color(0xFF94A3B8))),
+                IconButton(onPressed: () => _showActivityDetails(context, event, onRefresh), icon: const Icon(Icons.info_outline_rounded, color: Color(0xFF94A3B8))),
                 const SizedBox(width: 8),
                 if (!isAdviser) _buildAction(context, event, onRefresh),
               ],
@@ -1355,7 +1366,7 @@ class _MyEventsView extends StatelessWidget {
     }
   }
 
-  void _showActivityDetails(BuildContext context, Map<String, dynamic> activity) {
+  void _showActivityDetails(BuildContext context, Map<String, dynamic> activity, VoidCallback onRefresh) {
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -1746,7 +1757,8 @@ class _SubmitReportView extends StatelessWidget {
 // Events Workflow View
 class _OrgViewEventsView extends StatelessWidget {
   final List<Map<String, dynamic>> activities;
-  const _OrgViewEventsView({required this.activities});
+  final VoidCallback onRefresh;
+  const _OrgViewEventsView({required this.activities, required this.onRefresh});
 
   @override
   Widget build(BuildContext context) {
@@ -1805,7 +1817,7 @@ class _OrgViewEventsView extends StatelessWidget {
     return GridView.builder(
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 20, mainAxisSpacing: 20, childAspectRatio: 1.4),
       itemCount: list.length,
-      itemBuilder: (context, index) => _GPOAStatusCard(activity: list[index]),
+      itemBuilder: (context, index) => _GPOAStatusCard(activity: list[index], onRefresh: onRefresh),
     );
   }
 }
@@ -1815,17 +1827,19 @@ class _GPOAStatusGridView extends StatelessWidget {
   final List<Map<String, dynamic>> activities;
   final Function(String) onAction;
   final String userRole;
-  const _GPOAStatusGridView({required this.activities, required this.onAction, required this.userRole});
+  final VoidCallback onRefresh;
+  const _GPOAStatusGridView({required this.activities, required this.onAction, required this.userRole, required this.onRefresh});
 
   @override
   Widget build(BuildContext context) {
     final inReview = activities.where((a) => ['Pending', 'Endorsed'].contains(a['status'])).toList();
+    final approved = activities.where((a) => a['status'] == 'Approved').toList();
     final revision = activities.where((a) => a['status'] == 'Needs Revision').toList();
     final declined = activities.where((a) => a['status'] == 'Rejected').toList();
     final isAdviser = userRole == 'Adviser';
 
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Padding(
         padding: const EdgeInsets.all(40.0),
         child: Column(
@@ -1883,6 +1897,7 @@ class _GPOAStatusGridView extends StatelessWidget {
                 dividerColor: Colors.transparent,
                 tabs: [
                   Tab(child: Text('Under Review (${inReview.length})', style: const TextStyle(fontWeight: FontWeight.bold))),
+                  Tab(child: Text('Approved (${approved.length})', style: const TextStyle(fontWeight: FontWeight.bold))),
                   Tab(child: Text('Needs Correction (${revision.length})', style: const TextStyle(fontWeight: FontWeight.bold))),
                   Tab(child: Text('Declined (${declined.length})', style: const TextStyle(fontWeight: FontWeight.bold))),
                 ],
@@ -1893,6 +1908,7 @@ class _GPOAStatusGridView extends StatelessWidget {
               child: TabBarView(
                 children: [
                   _buildGrid(inReview, 'No proposals currently under review.'),
+                  _buildGrid(approved, 'No approved proposals yet.'),
                   _buildGrid(revision, 'All clear! No revisions requested.'),
                   _buildGrid(declined, 'No declined proposals found.'),
                 ],
@@ -1909,14 +1925,15 @@ class _GPOAStatusGridView extends StatelessWidget {
     return GridView.builder(
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 20, mainAxisSpacing: 20, childAspectRatio: 1.4),
       itemCount: list.length,
-      itemBuilder: (context, index) => _GPOAStatusCard(activity: list[index]),
+      itemBuilder: (context, index) => _GPOAStatusCard(activity: list[index], onRefresh: onRefresh),
     );
   }
 }
 
 class _GPOAStatusCard extends StatelessWidget {
   final Map<String, dynamic> activity;
-  const _GPOAStatusCard({required this.activity});
+  final VoidCallback onRefresh;
+  const _GPOAStatusCard({required this.activity, required this.onRefresh});
 
   @override
   Widget build(BuildContext context) {
@@ -1941,7 +1958,7 @@ class _GPOAStatusCard extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => _showActivityDetails(context, activity),
+          onTap: () => _showActivityDetails(context, activity, onRefresh),
           borderRadius: BorderRadius.circular(24),
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -1984,7 +2001,7 @@ class _GPOAStatusCard extends StatelessWidget {
     );
   }
 
-  void _showActivityDetails(BuildContext context, Map<String, dynamic> activity) {
+  void _showActivityDetails(BuildContext context, Map<String, dynamic> activity, VoidCallback onRefresh) {
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -2007,6 +2024,17 @@ class _GPOAStatusCard extends StatelessWidget {
               status: activity['status'] ?? 'Pending',
               createdAt: AppUtils.formatDateTime(activity['created_at']),
               proposedDate: activity['proposed_date'] != null ? AppUtils.formatDateTime(activity['proposed_date']) : null,
+              onStatusUpdate: activity['status'] == 'Needs Revision' ? (s) async {
+                try {
+                  await Supabase.instance.client.from('activities').update({'status': 'Pending'}).eq('id', activity['id']);
+                  if (!context.mounted) return;
+                  AppUtils.showTopToast(context, 'Activity resubmitted for review.');
+                  onRefresh();
+                  Navigator.pop(context);
+                } catch (e) {
+                  if (context.mounted) AppUtils.showTopToast(context, 'Error: $e', isError: true);
+                }
+              } : null,
             ),
           ),
         ),
@@ -2120,12 +2148,14 @@ class _GPOAReportPrintingView extends StatelessWidget {
       orElse: () => {'full_name': 'Not Assigned'},
     );
 
+    final approvedActivities = activities.where((a) => ['Approved', 'Scheduled', 'Completed'].contains(a['status'])).toList();
+
     if (context.mounted) {
       showDialog(
         context: context,
         builder: (context) => GPOAPreviewDialog(
           organization: orgData,
-          activities: activities,
+          activities: approvedActivities,
           president: president,
           adviser: adviser,
           fileName: 'GPOA_${orgData['name']}.pdf',

@@ -3,14 +3,14 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 class GPOAPdfGenerator {
-  // 11 Columns: Program, SDGs, Objectives, Outcome, Participants, Time, Delivery, Resources(3), Type
+  // 11 Columns: Program, Sustainable Development Goals, Objectives, Outcome, Participants, Time, Delivery, Resources(3), Type
   static final Map<int, pw.TableColumnWidth> _folioWidths = {
     0: const pw.FixedColumnWidth(110), // Program
-    1: const pw.FixedColumnWidth(75),  // SDGs
+    1: const pw.FixedColumnWidth(75),  // SDG
     2: const pw.FixedColumnWidth(100), // Objectives
     3: const pw.FixedColumnWidth(95),  // Outcome
     4: const pw.FixedColumnWidth(95),  // Participants
-    5: const pw.FixedColumnWidth(45),  // Timeframe
+    5: const pw.FixedColumnWidth(45),  // Time frame
     6: const pw.FixedColumnWidth(80),  // Delivery
     7: const pw.FixedColumnWidth(65),  // RESOURCE: Persons
     8: const pw.FixedColumnWidth(65),  // RESOURCE: Facilities
@@ -39,16 +39,15 @@ class GPOAPdfGenerator {
     );
     
     // Attempt to load images safely
-    pw.ImageProvider? logo, iso, pilipinas, stars, aun, bldg;
+    pw.ImageProvider? logo, iso, pilipinasImage, stars, aun, bldg;
     
     try { logo = await imageFromAssetBundle('assets/images/csulogo.png'); } catch (_) {}
     try { iso = await imageFromAssetBundle('assets/images/iso_pab.png'); } catch (_) {}
-    try { pilipinas = await imageFromAssetBundle('assets/images/bagong_pilipinas.png'); } catch (_) {}
+    try { pilipinasImage = await imageFromAssetBundle('assets/images/bagong_pilipinas.png'); } catch (_) {}
     try { stars = await imageFromAssetBundle('assets/images/qs_stars.png'); } catch (_) {}
     try { aun = await imageFromAssetBundle('assets/images/aun_qa.png'); } catch (_) {}
     try { bldg = await imageFromAssetBundle('assets/images/vision_mission_building.png'); } catch (_) {}
 
-    final csuMaroon = PdfColor.fromHex('#800000');
 
     pdf.addPage(
       pw.MultiPage(
@@ -58,46 +57,53 @@ class GPOAPdfGenerator {
         header: (pw.Context context) {
           return pw.Column(
             children: [
-              // University Branding
+              // Official Folio Header
               pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
+                  // Logo Left
+                  if (logo != null) pw.Container(height: 65, width: 65, child: pw.Image(logo)) else pw.SizedBox(width: 65, height: 65),
+                  pw.SizedBox(width: 20),
+                  
+                  // Institutional Branding Center
                   pw.Expanded(
                     child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      crossAxisAlignment: pw.CrossAxisAlignment.center,
                       children: [
-                        pw.Text('CAGAYAN STATE UNIVERSITY', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10, color: csuMaroon)),
-                        pw.Text('REPUBLIC OF THE PHILIPPINES', style: pw.TextStyle(fontSize: 9, color: csuMaroon)),
-                        pw.Text('LAL-LO CAMPUS', style: pw.TextStyle(fontSize: 9, color: csuMaroon)),
-                        pw.Text('Address', style: pw.TextStyle(fontSize: 8, fontStyle: pw.FontStyle.italic, color: csuMaroon)),
+                        pw.Text('REPUBLIC OF THE PHILIPPINES', style: pw.TextStyle(fontSize: 9, color: PdfColor.fromHex('#B71C1C'))),
+                        pw.Text('CAGAYAN STATE UNIVERSITY', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14, color: PdfColor.fromHex('#B71C1C'))),
+                        pw.Text('ANDREWS CAMPUS', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, color: PdfColor.fromHex('#B71C1C'))),
+                        pw.Text('Caritan, Tuguegarao City, Cagayan', style: pw.TextStyle(fontSize: 9, color: PdfColor.fromHex('#B71C1C'))),
                       ],
                     ),
                   ),
-                  if (logo != null) pw.Container(height: 55, width: 55, child: pw.Image(logo)) else pw.SizedBox(width: 55, height: 55),
-                  pw.Expanded(
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.end,
-                      children: [
-                        pw.Text('Email Address:', style: pw.TextStyle(fontSize: 8, color: csuMaroon)),
-                        pw.Text('Website: www.csu.edu.ph', style: pw.TextStyle(fontSize: 8, color: csuMaroon)),
-                        pw.Text('Facebook Page:', style: pw.TextStyle(fontSize: 8, color: csuMaroon)),
-                      ],
-                    ),
+                  
+                  // Contact Details Right
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text('Email Address: osdw@csu.edu.ph', style: pw.TextStyle(fontSize: 8)),
+                      pw.Text('Website: www.csu.edu.ph', style: pw.TextStyle(fontSize: 8)),
+                      pw.Text('Facebook Page: Osdw Andrews', style: pw.TextStyle(fontSize: 8)),
+                    ],
                   ),
                 ],
               ),
+              pw.SizedBox(height: 12),
+              pw.Divider(thickness: 1, color: PdfColors.black),
               pw.SizedBox(height: 8),
               
-              // Organization Name Centered Below Logo
+              // OSDW Center Title
+              pw.Center(child: pw.Text('OFFICE OF STUDENT DEVELOPMENT AND WELFARE', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11))),
+              pw.SizedBox(height: 12),
+              
+              // Organization Name
               pw.Center(
                 child: pw.Text(organization['name']?.toString().toUpperCase() ?? 'NAME OF ORGANIZATION', 
                   style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
               ),
-              pw.SizedBox(height: 4),
-              pw.Divider(thickness: 0.5, color: PdfColors.black),
               pw.SizedBox(height: 12),
               
-              // Top border for the table when it continues on Page 2+
               if (context.pageNumber > 1) 
                 pw.Container(height: 0.5, color: PdfColors.black, width: double.infinity),
             ],
@@ -112,7 +118,7 @@ class GPOAPdfGenerator {
                 children: [
                   pw.Spacer(),
                   if (iso != null) pw.Padding(padding: const pw.EdgeInsets.only(right: 5), child: pw.Image(iso, height: 32)),
-                  if (pilipinas != null) pw.Padding(padding: const pw.EdgeInsets.only(right: 5), child: pw.Image(pilipinas, height: 32)),
+                  if (pilipinasImage != null) pw.Padding(padding: const pw.EdgeInsets.only(right: 5), child: pw.Image(pilipinasImage, height: 32)),
                   if (stars != null) pw.Padding(padding: const pw.EdgeInsets.only(right: 5), child: pw.Image(stars, height: 32)),
                   if (aun != null) pw.Padding(padding: const pw.EdgeInsets.only(right: 5), child: pw.Image(aun, height: 32)),
                   if (bldg != null) pw.Padding(padding: const pw.EdgeInsets.only(right: 10), child: pw.Image(bldg, height: 40)),
@@ -136,12 +142,12 @@ class GPOAPdfGenerator {
               columnWidths: _folioWidths,
               children: [
                 // Header Row (only on first page content, but Table repeat header would be better if we could split it)
-                // For now, consistent with standard MultiPage table behavior
+                // For now, consistent with standard multipage table behavior
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(color: PdfColors.grey100),
                   children: [
                     _headerCell('PROGRAM/\nACTIVITIES/\nPROJECT'),
-                    _headerCell('SDGs\naddressed'),
+                    _headerCell('SDG\naddressed'),
                     _headerCell('OBJECTIVES'),
                     _headerCell('EXPECTED\nOUTCOME'),
                     _headerCell('TARGET\nPARTICIPANTS'),
