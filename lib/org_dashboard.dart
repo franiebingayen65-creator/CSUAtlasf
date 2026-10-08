@@ -96,19 +96,8 @@ class _OrgDashboardState extends State<OrgDashboard> {
             .eq('organization_id', _orgData!['id'])
             .listen((data) {
               if (mounted) {
-                final now = DateTime.now();
-                for (var item in data) {
-                  if (item['status'] == 'Scheduled' && item['proposed_date'] != null) {
-                    try {
-                      final eventDate = DateTime.parse(item['proposed_date'].toString()).toLocal();
-                      final duration = AppUtils.parseDuration(item['time_frame']);
-                      if (eventDate.add(duration).isBefore(now)) {
-                        _supabase.from('activities').update({'status': 'Completed'}).eq('id', item['id']);
-                      }
-                    } catch (_) {}
-                  }
-                }
                 setState(() { _myActivities = List<Map<String, dynamic>>.from(data); });
+                _handleAutoCompletion();
               }
             });
       } else {
@@ -118,6 +107,21 @@ class _OrgDashboardState extends State<OrgDashboard> {
       if (!mounted) return;
       AppUtils.showTopToast(context, 'Error: $e', isError: true);
       setState(() => _isLoading = false);
+    }
+  }
+
+  void _handleAutoCompletion() {
+    final now = DateTime.now();
+    for (var item in _myActivities) {
+      if (item['status'] == 'Scheduled' && item['proposed_date'] != null) {
+        try {
+          final eventDate = DateTime.parse(item['proposed_date'].toString()).toLocal();
+          final duration = AppUtils.parseDuration(item['time_frame']);
+          if (eventDate.add(duration).isBefore(now)) {
+            _supabase.from('activities').update({'status': 'Completed'}).eq('id', item['id']).then((_) {});
+          }
+        } catch (_) {}
+      }
     }
   }
 
@@ -188,6 +192,7 @@ class _OrgDashboardState extends State<OrgDashboard> {
                   userRole: _userRole ?? 'President',
                   onLogout: _showLogoutDialog,
                   onProfile: () => _onPageSelected('Profile'),
+                  onNavigate: _onPageSelected,
                 ),
                 Expanded(
                   child: AnimatedSwitcher(
@@ -208,7 +213,7 @@ class _OrgDashboardState extends State<OrgDashboard> {
       case 'Dashboard':
         return _OrgDashboardContent(orgData: _orgData!, activities: _myActivities, userRole: _userRole ?? 'President', onRefresh: _fetchOrgData);
       case 'GPOA Submission':
-        return _GPOASubmissionView(orgId: _orgData!['id'], onBack: () => setState(() => _activePage = 'Manage GPOA'));
+        return _GPOASubmissionView(orgId: _orgData!['id'], orgType: _orgData!['type']?.toString(), onBack: () => setState(() => _activePage = 'Manage GPOA'));
       case 'Manage GPOA':
         return _GPOAStatusGridView(activities: _myActivities, onAction: (page) => setState(() => _activePage = page), userRole: _userRole ?? 'President', onRefresh: _fetchOrgData);
       case 'GPOA Review':
@@ -221,8 +226,11 @@ class _OrgDashboardState extends State<OrgDashboard> {
         return _GPOAReportPrintingView(orgData: _orgData!, activities: _myActivities, profiles: _orgProfiles, onBack: () => setState(() => _activePage = 'Manage GPOA'));
       case 'Submit Report':
         return _SubmitReportView(activities: _myActivities, userRole: _userRole ?? 'President', onRefresh: _fetchOrgData);
+      case 'Evaluation Scores':
       case 'Organization Ranks':
-        return const _OrgRanksView();
+        return _OrgEvaluationScoresView(orgData: _orgData!);
+      case 'Archives':
+        return _ArchivesView(orgData: _orgData!, activities: _myActivities, userRole: _userRole ?? 'President');
       case 'Profile':
         return _OrgProfileView(orgData: _orgData!);
       default:
@@ -347,11 +355,18 @@ class _OrgSidebar extends StatelessWidget {
                     onTap: () => onPageSelected('Submit Report'),
                   ),
                   _SidebarItem(
-                    icon: Icons.emoji_events_rounded,
-                    title: 'Organization Ranks',
-                    isSelected: activePage == 'Organization Ranks',
+                    icon: Icons.stars_rounded,
+                    title: 'Evaluation Scores',
+                    isSelected: activePage == 'Evaluation Scores' || activePage == 'Organization Ranks',
                     isCollapsed: isCollapsed,
-                    onTap: () => onPageSelected('Organization Ranks'),
+                    onTap: () => onPageSelected('Evaluation Scores'),
+                  ),
+                  _SidebarItem(
+                    icon: Icons.folder_special_rounded,
+                    title: 'Archives',
+                    isSelected: activePage == 'Archives',
+                    isCollapsed: isCollapsed,
+                    onTap: () => onPageSelected('Archives'),
                   ),
                 ],
               ),
@@ -429,8 +444,9 @@ class _SidebarHeader extends StatelessWidget {
 class _OrgTopBar extends StatelessWidget {
   final String orgName, userRole;
   final VoidCallback onLogout, onProfile;
+  final Function(String page)? onNavigate;
 
-  const _OrgTopBar({required this.orgName, required this.userRole, required this.onLogout, required this.onProfile});
+  const _OrgTopBar({required this.orgName, required this.userRole, required this.onLogout, required this.onProfile, this.onNavigate});
 
   @override
   Widget build(BuildContext context) {
@@ -462,7 +478,7 @@ class _OrgTopBar extends StatelessWidget {
           ),
           Container(
             decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(12)),
-            child: IconButton(icon: const Icon(Icons.notifications_none_rounded, color: Color(0xFF64748B)), onPressed: () {}),
+            child: NotificationInboxButton(onNotificationTap: onNavigate),
           ),
           const SizedBox(width: 20),
           PopupMenuButton<String>(
@@ -500,8 +516,11 @@ class _OrgDashboardContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAdviser = userRole == 'Adviser';
-    final pendingCount = activities.where((a) => isAdviser ? a['status'] == 'Pending' : ['Pending', 'Endorsed', 'Awaiting Date Approval'].contains(a['status'])).length;
-    final clearedCount = activities.where((a) => ['Approved', 'Scheduled', 'Completed'].contains(a['status'])).length;
+    final activeActivities = activities.where((a) => a['is_archived'] != true).toList();
+    final pendingCount = activeActivities.where((a) => isAdviser ? a['status'] == 'Pending' : ['Pending', 'Endorsed', 'Awaiting Date Approval'].contains(a['status'])).length;
+    final clearedCount = activeActivities.where((a) => ['Approved', 'Scheduled', 'Completed'].contains(a['status'])).length;
+
+    final approvedCount = activeActivities.where((a) => a['status'] == 'Approved').length;
 
     return RefreshIndicator(
       onRefresh: () async => onRefresh(),
@@ -510,24 +529,51 @@ class _OrgDashboardContent extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (approvedCount > 0 && !isAdviser)
+              Container(
+                margin: const EdgeInsets.only(bottom: 32),
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.2)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.auto_awesome, color: Color(0xFF6366F1)),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Text(
+                        'You have $approvedCount activity proposal(s) ready for scheduling! Go to "Scheduling & Letters" to pick your dates.',
+                        style: const TextStyle(color: Color(0xFF4338CA), fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () { (context.findAncestorStateOfType<_OrgDashboardState>())?._onPageSelected('Scheduling & Letters'); },
+                      child: const Text('Go to Scheduling'),
+                    ),
+                  ],
+                ),
+              ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Welcome back, ${isAdviser ? 'Adviser' : 'President'}!', style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Color(0xFF0F172A), letterSpacing: -1)),
-                    const SizedBox(height: 8),
-                    Text('Here\'s what\'s happening with ${orgData['name']}.', style: const TextStyle(color: Color(0xFF64748B), fontSize: 16, fontWeight: FontWeight.w500)),
-                  ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Welcome back, ${isAdviser ? 'Adviser' : 'President'}!', style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Color(0xFF0F172A), letterSpacing: -1)),
+                      const SizedBox(height: 8),
+                      Text('Here\'s what\'s happening with ${orgData['name']}.', style: const TextStyle(color: Color(0xFF64748B), fontSize: 16, fontWeight: FontWeight.w500)),
+                    ],
+                  ),
                 ),
-                if (isAdviser && pendingCount > 0) AlertBadge(message: '$pendingCount New Proposals'),
               ],
             ),
             const SizedBox(height: 48),
             Row(
               children: [
-                StatCard(title: 'Total GPOA Activities', value: activities.length.toString(), icon: Icons.assignment_rounded, color: const Color(0xFF3B82F6), onTap: () { (context.findAncestorStateOfType<_OrgDashboardState>())?._onPageSelected('GPOA Status'); }),
+                StatCard(title: 'Total GPOA Activities', value: activeActivities.length.toString(), icon: Icons.assignment_rounded, color: const Color(0xFF3B82F6), onTap: () { (context.findAncestorStateOfType<_OrgDashboardState>())?._onPageSelected('GPOA Status'); }),
                 const SizedBox(width: 24),
                 StatCard(title: 'Awaiting Action', value: pendingCount.toString(), icon: Icons.timer_rounded, color: const Color(0xFFF59E0B), onTap: () { (context.findAncestorStateOfType<_OrgDashboardState>())?._onPageSelected(isAdviser ? 'GPOA Review' : 'GPOA Status'); }),
                 const SizedBox(width: 24),
@@ -551,7 +597,7 @@ class _OrgDashboardContent extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 20),
-                      if (activities.isEmpty)
+                      if (activeActivities.isEmpty)
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(48),
@@ -568,9 +614,9 @@ class _OrgDashboardContent extends StatelessWidget {
                         ListView.builder(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
-                          itemCount: activities.length > 5 ? 5 : activities.length,
+                          itemCount: activeActivities.length > 5 ? 5 : activeActivities.length,
                           itemBuilder: (context, index) {
-                            final activity = activities[index];
+                            final activity = activeActivities[index];
                             return Container(
                               margin: const EdgeInsets.only(bottom: 16),
                               decoration: BoxDecoration(
@@ -606,7 +652,12 @@ class _OrgDashboardContent extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 32),
-                Expanded(flex: 1, child: _OrgStandingCard(orgName: orgData['name'])),
+                Expanded(
+                  flex: 1,
+                  child: _OrgStandingCard(
+                    orgName: orgData['name']?.toString() ?? 'Organization',
+                  ),
+                ),
               ],
             ),
           ],
@@ -621,7 +672,7 @@ class _OrgDashboardContent extends StatelessWidget {
       builder: (context) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         child: Container(
-          width: 1000,
+          constraints: const BoxConstraints(maxWidth: 1000),
           padding: const EdgeInsets.all(32),
           child: SingleChildScrollView(
             child: GPOAActivityDetailsView(
@@ -657,12 +708,51 @@ class _OrgDashboardContent extends StatelessWidget {
   }
 }
 
-class _OrgStandingCard extends StatelessWidget {
+class _OrgStandingCard extends StatefulWidget {
   final String orgName;
   const _OrgStandingCard({required this.orgName});
 
   @override
+  State<_OrgStandingCard> createState() => _OrgStandingCardState();
+}
+
+class _OrgStandingCardState extends State<_OrgStandingCard> {
+  static const _schoolYear = '2025-2026';
+  Map<String, dynamic>? _standing;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStanding();
+  }
+
+  Future<void> _loadStanding() async {
+    try {
+      final result = await Supabase.instance.client.rpc(
+        'get_my_organization_ranking',
+        params: {'p_school_year': _schoolYear},
+      );
+      if (!mounted) return;
+      setState(() {
+        _standing = result is List && result.isNotEmpty
+            ? Map<String, dynamic>.from(result.first as Map)
+            : null;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final rawRating = _standing?['adjectival_rating']?.toString() ?? 'Pending Evaluation';
+    final rating = rawRating.contains('|') ? rawRating.split('|').first : rawRating;
+
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, 5))]),
@@ -670,24 +760,32 @@ class _OrgStandingCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.1), shape: BoxShape.circle), child: const Icon(Icons.emoji_events_rounded, color: Colors.orange, size: 24)),
+            Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF6366F1).withValues(alpha: 0.1), shape: BoxShape.circle), child: const Icon(Icons.star_rounded, color: Color(0xFF6366F1), size: 24)),
             const SizedBox(width: 16),
-            const Text('Org Standing', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            const Text('Evaluation Score', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
           ]),
           const SizedBox(height: 32),
-          const Text('CURRENT RANK', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w800, letterSpacing: 1)),
+          const Text('TOTAL EVALUATION SCORE', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w800, letterSpacing: 1)),
           const SizedBox(height: 8),
-          const Text('# --', style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 24),
-          const Text('TOTAL SCORE', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w800, letterSpacing: 1)),
-          const SizedBox(height: 8),
-          const Text('0.00 PTS', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xFF6366F1))),
-          const Divider(height: 48),
-          Row(children: [
-            const Icon(Icons.info_outline_rounded, size: 14, color: Colors.grey),
-            const SizedBox(width: 8),
-            Expanded(child: Text('Standing is updated after every semester based on activity scores.', style: TextStyle(fontSize: 12, color: Colors.grey[600], fontStyle: FontStyle.italic, height: 1.4))),
-          ]),
+          Text(
+            _isLoading
+                ? 'Loading…'
+                : _standing == null
+                    ? 'No score yet'
+                    : '${(((_standing!['grand_total'] as num?)?.toDouble()) ?? 0).toStringAsFixed(2)} PTS',
+            style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Color(0xFF6366F1)),
+          ),
+          if (_standing != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(color: const Color(0xFF6366F1).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+              child: Text(
+                rating.toUpperCase(),
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF6366F1)),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -696,8 +794,9 @@ class _OrgStandingCard extends StatelessWidget {
 
 class _GPOASubmissionView extends StatefulWidget {
   final String orgId;
+  final String? orgType;
   final VoidCallback onBack;
-  const _GPOASubmissionView({required this.orgId, required this.onBack});
+  const _GPOASubmissionView({required this.orgId, this.orgType, required this.onBack});
   @override
   State<_GPOASubmissionView> createState() => _GPOASubmissionViewState();
 }
@@ -705,7 +804,25 @@ class _GPOASubmissionView extends StatefulWidget {
 class _GPOASubmissionViewState extends State<_GPOASubmissionView> {
   final _formKey = GlobalKey<FormState>();
   String? _selectedType;
-  final List<String> _activityTypes = ['Makakalikasan and Extension', 'Convocation-Programs', 'Seminars and symposium', 'Religious activities', 'Tangible Projects', 'Sports and Socio-cultural act'];
+  List<String> get _activityTypes {
+    final type = (widget.orgType ?? '').toLowerCase();
+    if (type.contains('specialized') || type.contains('special')) {
+      return const [
+        'Symposium /Seminars Conducted',
+        'Activities Conducted /Sponsored in line with the nature of the organization',
+        'Makakalikasan/ Clean and Green Activities and Projects',
+        'Extension Services Sponsored/ Conducted',
+      ];
+    }
+    return const [
+      'Symposium/ Seminars Conducted',
+      'Convocations/ Programs and Literary Activities',
+      'Religious Activities',
+      'Socio-Cultural and Sports Activities',
+      'Makakalikasan/ Clean and Green Activities and Projects',
+      'Extension Services Sponsored/ Conducted',
+    ];
+  }
   final List<String> _sdgList = [
     'SDG 1: No Poverty', 'SDG 2: Zero Hunger', 'SDG 3: Good Health and Well-being', 'SDG 4: Quality Education', 'SDG 5: Gender Equality',
     'SDG 6: Clean Water and Sanitation', 'SDG 7: Affordable and Clean Energy', 'SDG 8: Decent Work and Economic Growth', 'SDG 9: Industry, Innovation and Infrastructure',
@@ -1006,7 +1123,36 @@ class _GPOASubmissionViewState extends State<_GPOASubmissionView> {
                   child: Column(
                     children: [
                       Row(children: [
-                        Expanded(child: _buildField('Time Frame', 'timeFrame', Icons.timer_rounded)),
+                        Expanded(
+                          child: InkWell(
+                            onTap: () async {
+                              final start = await showTimePicker(
+                                context: context,
+                                initialTime: const TimeOfDay(hour: 8, minute: 0),
+                                helpText: 'SELECT START TIME',
+                              );
+                              if (start == null || !context.mounted) return;
+                              final startFormatted = start.format(context);
+
+                              final end = await showTimePicker(
+                                context: context,
+                                initialTime: TimeOfDay(hour: start.hour + 2, minute: start.minute),
+                                helpText: 'SELECT END TIME',
+                              );
+                              if (end == null || !context.mounted) return;
+                              final endFormatted = end.format(context);
+
+                              if (mounted) {
+                                setState(() {
+                                  _controllers['timeFrame']!.text = '$startFormatted - $endFormatted';
+                                });
+                              }
+                            },
+                            child: AbsorbPointer(
+                              child: _buildField('Time Frame', 'timeFrame', Icons.timer_rounded, hint: 'Select time range'),
+                            ),
+                          ),
+                        ),
                         const SizedBox(width: 24),
                         Expanded(child: _buildField('Budget Allocation (₱)', 'budget', Icons.payments_rounded, isNumeric: true)),
                       ]),
@@ -1115,7 +1261,7 @@ class _GPOASubmissionViewState extends State<_GPOASubmissionView> {
     );
   }
 
-  Widget _buildField(String label, String key, IconData icon, {int maxLines = 1, bool isNumeric = false}) {
+  Widget _buildField(String label, String key, IconData icon, {int maxLines = 1, bool isNumeric = false, String? hint}) {
     List<TextInputFormatter>? formatters;
     if (isNumeric) {
       formatters = [FilteringTextInputFormatter.digitsOnly];
@@ -1128,6 +1274,7 @@ class _GPOASubmissionViewState extends State<_GPOASubmissionView> {
       style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
       decoration: InputDecoration(
         labelText: label,
+        hintText: hint,
         labelStyle: const TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w500),
         prefixIcon: Icon(icon, size: 20),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -1152,9 +1299,10 @@ class _MyEventsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAdviser = userRole == 'Adviser';
-    final schedulingList = activities.where((a) => ['Approved', 'Awaiting Date Approval'].contains(a['status'])).toList();
-    final revisionList = activities.where((a) => a['status'] == 'Needs Revision').toList();
-    final letterList = activities.where((a) => a['status'] == 'Scheduled').toList();
+    final activeActivities = activities.where((a) => a['is_archived'] != true);
+    final schedulingList = activeActivities.where((a) => ['Approved', 'Awaiting Date Approval'].contains(a['status'])).toList();
+    final revisionList = activeActivities.where((a) => a['status'] == 'Needs Revision').toList();
+    final letterList = activeActivities.where((a) => a['status'] == 'Scheduled').toList();
 
     return DefaultTabController(
       length: 3,
@@ -1332,38 +1480,15 @@ class _MyEventsView extends StatelessWidget {
     return const SizedBox();
   }
 
-  Future<void> _handleRevision(BuildContext context, Map<String, dynamic> event, VoidCallback onRefresh) async {
-    final now = DateTime.now();
-    final firstDate = DateTime(now.year, now.month, now.day);
-    DateTime initialDateValue = event['proposed_date'] != null ? DateTime.parse(event['proposed_date'].toString()).toLocal() : now;
-    if (initialDateValue.isBefore(firstDate)) initialDateValue = firstDate;
-
-    final DateTime? pickedDate = await showDatePicker(
-      context: context, 
-      initialDate: initialDateValue, 
-      firstDate: firstDate, 
-      lastDate: DateTime(now.year + 5),
-      helpText: 'REVISE EVENT DATE',
+  void _handleRevision(BuildContext context, Map<String, dynamic> event, VoidCallback onRefresh) {
+    showDialog(
+      context: context,
+      builder: (ctx) => _ReviseActivityDialog(
+        activity: event,
+        userRole: userRole,
+        onRefreshed: onRefresh,
+      ),
     );
-    
-    if (pickedDate != null && context.mounted) {
-      final TimeOfDay? pickedTime = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initialDateValue));
-      if (pickedTime != null) {
-        final DateTime finalDateTime = DateTime(pickedDate.year, pickedDate.month, pickedDate.day, pickedTime.hour, pickedTime.minute);
-        try {
-          await Supabase.instance.client.from('activities').update({
-            'proposed_date': finalDateTime.toUtc().toIso8601String(),
-            'status': 'Awaiting Date Approval',
-          }).eq('id', event['id']);
-          if (context.mounted) {
-            AppUtils.showTopToast(context, 'Schedule updated and resubmitted for approval!');
-            onRefresh();
-          }
-        } catch (e) {
-          if (context.mounted) AppUtils.showTopToast(context, 'Error: $e', isError: true);
-        }
-      }
-    }
   }
 
   void _showActivityDetails(BuildContext context, Map<String, dynamic> activity, VoidCallback onRefresh) {
@@ -1371,7 +1496,7 @@ class _MyEventsView extends StatelessWidget {
       context: context,
       builder: (context) => Dialog(
         child: Container(
-          width: 800,
+          constraints: const BoxConstraints(maxWidth: 800),
           padding: const EdgeInsets.all(24),
           child: SingleChildScrollView(
             child: Column(
@@ -1605,8 +1730,8 @@ class _SubmitReportView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAdviser = userRole == 'Adviser';
-    // Join logic: We will now look at the accomplishment_reports table for status
-    final completed = activities.where((a) => ['Completed', 'Scheduled'].contains(a['status'])).toList();
+    // We look at activities that are Completed or Scheduled
+    final completed = activities.where((a) => a['is_archived'] != true && ['Completed', 'Scheduled'].contains(a['status'])).toList();
 
     return Padding(
       padding: const EdgeInsets.all(32),
@@ -1621,13 +1746,19 @@ class _SubmitReportView extends StatelessWidget {
                 : FutureBuilder<List<Map<String, dynamic>>>(
                     future: _fetchReports(),
                     builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
                       final reports = snapshot.data ?? [];
+                      
                       return GridView.builder(
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 16, mainAxisSpacing: 16, childAspectRatio: 1.3),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3, 
+                          crossAxisSpacing: 16, 
+                          mainAxisSpacing: 16, 
+                          childAspectRatio: 1.3
+                        ),
                         itemCount: completed.length,
                         itemBuilder: (context, index) {
                           final activity = completed[index];
-                          // Find if a report exists for this activity
                           final report = reports.cast<Map<String, dynamic>?>().firstWhere((r) => r?['activity_id'] == activity['id'], orElse: () => null);
                           
                           final hasReport = report != null;
@@ -1635,6 +1766,7 @@ class _SubmitReportView extends StatelessWidget {
                           final isReportApproved = reportStatus == 'Approved';
 
                           return Card(
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey.withValues(alpha: 0.1))),
                             child: Padding(
                               padding: const EdgeInsets.all(16.0),
                               child: Column(
@@ -1642,13 +1774,13 @@ class _SubmitReportView extends StatelessWidget {
                                 children: [
                                   Text(activity['title'], style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
                                   const Spacer(),
-                                  Text('Completed: ${AppUtils.formatDateTime(activity['proposed_date'])}', style: TextStyle(fontSize: 10, color: Colors.grey[500], fontStyle: FontStyle.italic)),
+                                  Text('Event Date: ${AppUtils.formatDateTime(activity['proposed_date'])}', style: TextStyle(fontSize: 10, color: Colors.grey[500], fontStyle: FontStyle.italic)),
                                   const SizedBox(height: 12),
                                   if (hasReport) ...[
                                     Row(children: [
                                       Icon(isReportApproved ? Icons.check_circle : Icons.pending, color: isReportApproved ? Colors.green : Colors.orange, size: 16),
                                       const SizedBox(width: 4),
-                                      Text(isReportApproved ? 'Approved' : 'Submitted', style: TextStyle(color: isReportApproved ? Colors.green : Colors.orange, fontSize: 12, fontWeight: FontWeight.bold)),
+                                      Text(reportStatus, style: TextStyle(color: isReportApproved ? Colors.green : Colors.orange, fontSize: 12, fontWeight: FontWeight.bold)),
                                       const Spacer(),
                                       IconButton(
                                         icon: const Icon(Icons.visibility, color: Colors.blue, size: 20),
@@ -1670,7 +1802,15 @@ class _SubmitReportView extends StatelessWidget {
                                   ] else
                                     const Text('Pending Submission', style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.bold)),
                                   if (!isAdviser && !isReportApproved)
-                                    ElevatedButton.icon(onPressed: () => _uploadReport(context, activity), icon: const Icon(Icons.upload, size: 16), label: Text(hasReport ? 'Update' : 'Upload'), style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white)),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton.icon(
+                                        onPressed: () => _uploadReport(context, activity), 
+                                        icon: const Icon(Icons.upload, size: 16), 
+                                        label: Text(hasReport ? 'Update' : 'Upload'), 
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white)
+                                      ),
+                                    ),
                                 ],
                               ),
                             ),
@@ -1686,7 +1826,10 @@ class _SubmitReportView extends StatelessWidget {
   }
 
   Future<List<Map<String, dynamic>>> _fetchReports() async {
-    final response = await Supabase.instance.client.from('accomplishment_reports').select();
+    final response = await Supabase.instance.client
+        .from('accomplishment_reports')
+        .select()
+        .eq('is_archived', false);
     return List<Map<String, dynamic>>.from(response);
   }
 
@@ -1733,6 +1876,7 @@ class _SubmitReportView extends StatelessWidget {
           'attachments': uploadUrls,
           'status': 'Pending',
           'report_date': DateTime.now().toIso8601String(),
+          'is_archived': false,
         }).eq('id', existingReport['id']);
       } else {
         await Supabase.instance.client.from('accomplishment_reports').insert({
@@ -1762,10 +1906,11 @@ class _OrgViewEventsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final approved = activities.where((a) => a['status'] == 'Approved').toList();
-    final pendingDate = activities.where((a) => a['status'] == 'Awaiting Date Approval').toList();
-    final scheduled = activities.where((a) => a['status'] == 'Scheduled').toList();
-    final completed = activities.where((a) => a['status'] == 'Completed').toList();
+    final activeActivities = activities.where((a) => a['is_archived'] != true);
+    final approved = activeActivities.where((a) => a['status'] == 'Approved').toList();
+    final pendingDate = activeActivities.where((a) => a['status'] == 'Awaiting Date Approval').toList();
+    final scheduled = activeActivities.where((a) => a['status'] == 'Scheduled').toList();
+    final completed = activeActivities.where((a) => a['status'] == 'Completed').toList();
 
     return DefaultTabController(
       length: 4,
@@ -1832,14 +1977,16 @@ class _GPOAStatusGridView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final inReview = activities.where((a) => ['Pending', 'Endorsed'].contains(a['status'])).toList();
-    final approved = activities.where((a) => a['status'] == 'Approved').toList();
-    final revision = activities.where((a) => a['status'] == 'Needs Revision').toList();
-    final declined = activities.where((a) => a['status'] == 'Rejected').toList();
+    final activeActivities = activities.where((a) => a['is_archived'] != true).toList();
+    final archived = activities.where((a) => a['is_archived'] == true).toList();
+    final inReview = activeActivities.where((a) => ['Pending', 'Endorsed'].contains(a['status'])).toList();
+    final approved = activeActivities.where((a) => a['status'] == 'Approved').toList();
+    final revision = activeActivities.where((a) => a['status'] == 'Needs Revision').toList();
+    final declined = activeActivities.where((a) => a['status'] == 'Rejected').toList();
     final isAdviser = userRole == 'Adviser';
 
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Padding(
         padding: const EdgeInsets.all(40.0),
         child: Column(
@@ -1900,6 +2047,7 @@ class _GPOAStatusGridView extends StatelessWidget {
                   Tab(child: Text('Approved (${approved.length})', style: const TextStyle(fontWeight: FontWeight.bold))),
                   Tab(child: Text('Needs Correction (${revision.length})', style: const TextStyle(fontWeight: FontWeight.bold))),
                   Tab(child: Text('Declined (${declined.length})', style: const TextStyle(fontWeight: FontWeight.bold))),
+                  Tab(child: Text('Archived (${archived.length})', style: const TextStyle(fontWeight: FontWeight.bold))),
                 ],
               ),
             ),
@@ -1911,6 +2059,7 @@ class _GPOAStatusGridView extends StatelessWidget {
                   _buildGrid(approved, 'No approved proposals yet.'),
                   _buildGrid(revision, 'All clear! No revisions requested.'),
                   _buildGrid(declined, 'No declined proposals found.'),
+                  _buildGrid(archived, 'No archived GPOA activities.'),
                 ],
               ),
             ),
@@ -1993,6 +2142,50 @@ class _GPOAStatusCard extends StatelessWidget {
                     ),
                   ),
                 ],
+                const Spacer(),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    if (status == 'Needs Revision' || (activity['remarks']?.toString().isNotEmpty ?? false) || status == 'Pending')
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => _ReviseActivityDialog(
+                              activity: activity,
+                              userRole: 'President',
+                              onRefreshed: onRefresh,
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.history_edu_rounded, size: 16),
+                        label: const Text('Revise / Edit'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFF97316),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    TextButton.icon(
+                      onPressed: () async {
+                        final wasArchived = activity['is_archived'] == true;
+                        try {
+                          await Supabase.instance.client.from('activities').update({'is_archived': !wasArchived}).eq('id', activity['id']);
+                          if (context.mounted) {
+                            AppUtils.showTopToast(context, wasArchived ? 'GPOA restored.' : 'GPOA archived.');
+                            onRefresh();
+                          }
+                        } catch (e) {
+                          if (context.mounted) AppUtils.showTopToast(context, 'Could not update archive: $e', isError: true);
+                        }
+                      },
+                      icon: Icon(activity['is_archived'] == true ? Icons.unarchive_outlined : Icons.archive_outlined, size: 18),
+                      label: Text(activity['is_archived'] == true ? 'Restore' : 'Archive'),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -2007,7 +2200,7 @@ class _GPOAStatusCard extends StatelessWidget {
       builder: (context) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         child: Container(
-          width: 1000,
+          constraints: const BoxConstraints(maxWidth: 1000),
           padding: const EdgeInsets.all(32),
           child: SingleChildScrollView(
             child: GPOAActivityDetailsView(
@@ -2024,16 +2217,16 @@ class _GPOAStatusCard extends StatelessWidget {
               status: activity['status'] ?? 'Pending',
               createdAt: AppUtils.formatDateTime(activity['created_at']),
               proposedDate: activity['proposed_date'] != null ? AppUtils.formatDateTime(activity['proposed_date']) : null,
-              onStatusUpdate: activity['status'] == 'Needs Revision' ? (s) async {
-                try {
-                  await Supabase.instance.client.from('activities').update({'status': 'Pending'}).eq('id', activity['id']);
-                  if (!context.mounted) return;
-                  AppUtils.showTopToast(context, 'Activity resubmitted for review.');
-                  onRefresh();
-                  Navigator.pop(context);
-                } catch (e) {
-                  if (context.mounted) AppUtils.showTopToast(context, 'Error: $e', isError: true);
-                }
+              onStatusUpdate: (activity['status'] == 'Needs Revision' || (activity['remarks']?.toString().isNotEmpty ?? false) || activity['status'] == 'Pending') ? (s) async {
+                Navigator.pop(context);
+                showDialog(
+                  context: context,
+                  builder: (ctx) => _ReviseActivityDialog(
+                    activity: activity,
+                    userRole: 'President',
+                    onRefreshed: onRefresh,
+                  ),
+                );
               } : null,
             ),
           ),
@@ -2186,11 +2379,158 @@ class _SummaryItem extends StatelessWidget {
   }
 }
 
-class _OrgRanksView extends StatelessWidget {
-  const _OrgRanksView();
+class _OrgEvaluationScoresView extends StatefulWidget {
+  final Map<String, dynamic> orgData;
+  const _OrgEvaluationScoresView({required this.orgData});
+
+  @override
+  State<_OrgEvaluationScoresView> createState() => _OrgEvaluationScoresViewState();
+}
+
+class _OrgEvaluationScoresViewState extends State<_OrgEvaluationScoresView> {
+  String _schoolYear = '2025-2026';
+  Map<String, dynamic>? _eval;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchScore();
+  }
+
+  Future<void> _fetchScore() async {
+    setState(() => _isLoading = true);
+    try {
+      final res = await Supabase.instance.client
+          .from('organization_evaluations')
+          .select('*')
+          .eq('organization_id', widget.orgData['id'])
+          .eq('school_year', _schoolYear)
+          .maybeSingle();
+
+      if (mounted) {
+        setState(() {
+          _eval = res;
+          _isLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return const Center(child: Text('Leaderboard Coming Soon'));
+    final orgName = widget.orgData['name']?.toString().toUpperCase() ?? 'ORGANIZATION';
+    final total = (_eval?['grand_total'] as num?)?.toDouble() ?? 0.0;
+    final rawRating = (_eval?['adjectival_rating'] ?? 'Pending Evaluation').toString();
+    final rating = rawRating.contains('|') ? rawRating.split('|').first : rawRating;
+
+    final subCatScores = [
+      ['Item I: Symposium / Seminars Conducted', _eval?['score_i']],
+      ['Item II: Activities / Programs Conducted', _eval?['score_ii']],
+      ['Item III: Religious Activities', _eval?['score_iii']],
+      ['Item IV: Socio-Cultural & Sports Activities', _eval?['score_iv']],
+      ['Item V: Clean & Green Activities', _eval?['score_v']],
+      ['Item VI: Extension Services', _eval?['score_vi']],
+      ['Item VII: Tangible / Physical Projects', _eval?['score_vii']],
+      ['Item VIII: Fund Drive / IGP', _eval?['score_viii']],
+      ['Item IX: Financial Assistance', _eval?['score_ix']],
+      ['Item X: Action Plan Implementation', _eval?['score_x']],
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.all(36),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Evaluation Score & Breakdown', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                  Text(orgName, style: const TextStyle(color: Color(0xFF64748B), fontSize: 14, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade300)),
+                child: DropdownButton<String>(
+                  value: _schoolYear,
+                  underline: const SizedBox(),
+                  items: ['2024-2025', '2025-2026', '2026-2027'].map((sy) => DropdownMenuItem(value: sy, child: Text('SY $sy'))).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() => _schoolYear = val);
+                      _fetchScore();
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 32),
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)]),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('GRAND TOTAL SCORE', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                    const SizedBox(height: 4),
+                    Text(
+                      _isLoading ? 'Loading…' : '${total.toStringAsFixed(2)} PTS',
+                      style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w900),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(100)),
+                  child: Text(rating.toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 32),
+          const Text('Sub-Category Score Breakdown', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+          const SizedBox(height: 16),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _eval == null
+                    ? const Center(child: Text('No evaluation score recorded for this school year yet.', style: TextStyle(color: Color(0xFF64748B))))
+                    : ListView.builder(
+                        itemCount: subCatScores.length,
+                        itemBuilder: (ctx, idx) {
+                          final item = subCatScores[idx];
+                          final pts = (item[1] as num?)?.toDouble() ?? 0.0;
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(item[0].toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF334155))),
+                                Text('${pts.toStringAsFixed(1)} pts', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Color(0xFF4F46E5))),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -2527,6 +2867,632 @@ class _StatBox extends StatelessWidget {
           const SizedBox(height: 12),
           Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: color)),
           Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: color, letterSpacing: 0.5)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReviseActivityDialog extends StatefulWidget {
+  final Map<String, dynamic> activity;
+  final String userRole;
+  final VoidCallback onRefreshed;
+
+  const _ReviseActivityDialog({
+    required this.activity,
+    required this.userRole,
+    required this.onRefreshed,
+  });
+
+  @override
+  State<_ReviseActivityDialog> createState() => _ReviseActivityDialogState();
+}
+
+class _ReviseActivityDialogState extends State<_ReviseActivityDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late TextEditingController _titleController;
+  late TextEditingController _objectivesController;
+  late TextEditingController _outcomeController;
+  late TextEditingController _timeFrameController;
+  late TextEditingController _deliveryController;
+  late TextEditingController _facilitiesController;
+  late TextEditingController _budgetController;
+
+  String? _selectedType;
+  bool _isSubmitting = false;
+
+  List<String> get _activityTypes {
+    final type = (widget.activity['organization_type'] ?? widget.userRole).toString().toLowerCase();
+    if (type.contains('specialized') || type.contains('special')) {
+      return const [
+        'Symposium /Seminars Conducted',
+        'Activities Conducted /Sponsored in line with the nature of the organization',
+        'Makakalikasan/ Clean and Green Activities and Projects',
+        'Extension Services Sponsored/ Conducted',
+      ];
+    }
+    return const [
+      'Symposium/ Seminars Conducted',
+      'Convocations/ Programs and Literary Activities',
+      'Religious Activities',
+      'Socio-Cultural and Sports Activities',
+      'Makakalikasan/ Clean and Green Activities and Projects',
+      'Extension Services Sponsored/ Conducted',
+    ];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final act = widget.activity;
+    _titleController = TextEditingController(text: act['title']?.toString() ?? '');
+    _objectivesController = TextEditingController(text: act['objectives']?.toString() ?? act['description']?.toString() ?? '');
+    _outcomeController = TextEditingController(text: act['outcome']?.toString() ?? '');
+    _timeFrameController = TextEditingController(text: act['time_frame']?.toString() ?? '');
+    _deliveryController = TextEditingController(text: act['delivery_strategy']?.toString() ?? '');
+    _facilitiesController = TextEditingController(text: act['facilities_materials']?.toString() ?? '');
+    _budgetController = TextEditingController(text: act['budget_allocation']?.toString() ?? '');
+    _selectedType = act['subtitle']?.toString();
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _objectivesController.dispose();
+    _outcomeController.dispose();
+    _timeFrameController.dispose();
+    _deliveryController.dispose();
+    _facilitiesController.dispose();
+    _budgetController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitRevision() async {
+    if (!_formKey.currentState!.validate() || _selectedType == null) {
+      if (_selectedType == null) AppUtils.showTopToast(context, 'Please select an activity type.', isError: true);
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    try {
+      final actId = widget.activity['id'];
+      await Supabase.instance.client.from('activities').update({
+        'title': _titleController.text.trim(),
+        'subtitle': _selectedType,
+        'description': _objectivesController.text.trim(),
+        'objectives': _objectivesController.text.trim(),
+        'outcome': _outcomeController.text.trim(),
+        'time_frame': _timeFrameController.text.trim(),
+        'delivery_strategy': _deliveryController.text.trim(),
+        'facilities_materials': _facilitiesController.text.trim(),
+        'budget_allocation': _budgetController.text.trim(),
+        'status': 'Pending',
+        'remarks': null,
+      }).eq('id', actId);
+
+      try {
+        final orgName = widget.activity['organization_name'] ?? 'Organization';
+        await Supabase.instance.client.from('notifications').insert({
+          'title': 'Proposal Revised - ${_titleController.text.trim()}',
+          'body': '$orgName resubmitted the revised activity proposal for review.',
+          'status': 'Pending',
+        });
+      } catch (_) {}
+
+      if (mounted) {
+        Navigator.pop(context);
+        AppUtils.showTopToast(context, 'Activity proposal revised and resubmitted successfully!');
+        widget.onRefreshed();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+        AppUtils.showTopToast(context, 'Error resubmitting revision: $e', isError: true);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final remarks = widget.activity['remarks']?.toString();
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        width: 700,
+        constraints: const BoxConstraints(maxHeight: 750),
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: const [
+                    Icon(Icons.history_edu_rounded, color: Color(0xFFF97316), size: 28),
+                    SizedBox(width: 12),
+                    Text('Revise Activity Proposal', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+                  ],
+                ),
+                IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(context)),
+              ],
+            ),
+            const Divider(height: 24),
+            if (remarks != null && remarks.trim().isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7ED),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFDBA74)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: const [
+                        Icon(Icons.info_outline_rounded, color: Color(0xFFC2410C), size: 18),
+                        SizedBox(width: 8),
+                        Text('Revision Remarks from Adviser / Admin:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFC2410C))),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(remarks, style: const TextStyle(fontSize: 13, color: Color(0xFF7C2D12), height: 1.4)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+            Flexible(
+              child: SingleChildScrollView(
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: TextFormField(
+                              controller: _titleController,
+                              decoration: InputDecoration(
+                                labelText: 'Activity Title',
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            flex: 1,
+                            child: DropdownButtonFormField<String>(
+                              initialValue: _selectedType,
+                              decoration: InputDecoration(
+                                labelText: 'Activity Type',
+                                prefixIcon: const Icon(Icons.category_rounded, size: 20),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              items: _activityTypes.map((type) => DropdownMenuItem(value: type, child: Text(type, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis))).toList(),
+                              onChanged: (val) => setState(() => _selectedType = val),
+                              validator: (val) => val == null ? 'Required' : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _objectivesController,
+                        maxLines: 3,
+                        decoration: InputDecoration(
+                          labelText: 'Objectives',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _outcomeController,
+                        maxLines: 2,
+                        decoration: InputDecoration(
+                          labelText: 'Expected Outcome',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _timeFrameController,
+                              decoration: InputDecoration(
+                                labelText: 'Time Frame / Schedule',
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _budgetController,
+                              decoration: InputDecoration(
+                                labelText: 'Budget Allocation (₱)',
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _deliveryController,
+                        decoration: InputDecoration(
+                          labelText: 'Delivery Strategy',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _facilitiesController,
+                        decoration: InputDecoration(
+                          labelText: 'Facilities / Materials Required',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton.icon(
+                  onPressed: _isSubmitting ? null : _submitRevision,
+                  icon: _isSubmitting
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.send_rounded, size: 18),
+                  label: const Text('Resubmit Revised Proposal'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF97316),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ArchivesView extends StatefulWidget {
+  final List<Map<String, dynamic>> activities;
+  final Map<String, dynamic>? orgData;
+  final String userRole;
+
+  const _ArchivesView({
+    required this.activities,
+    this.orgData,
+    this.userRole = 'Admin',
+  });
+
+  @override
+  State<_ArchivesView> createState() => _ArchivesViewState();
+}
+
+class _ArchivesViewState extends State<_ArchivesView> {
+  String _searchQuery = '';
+  String _selectedCategory = 'All';
+  String _schoolYear = '2025-2026';
+  List<Map<String, dynamic>> _accomplishmentReports = [];
+  bool _isLoadingReports = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAccomplishmentReports();
+  }
+
+  Future<void> _fetchAccomplishmentReports() async {
+    try {
+      final res = await Supabase.instance.client
+          .from('accomplishment_reports')
+          .select('*, activities(*)');
+      if (mounted) {
+        setState(() {
+          _accomplishmentReports = List<Map<String, dynamic>>.from(res);
+          _isLoadingReports = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingReports = false);
+    }
+  }
+
+  void _openGPOADialog(List<Map<String, dynamic>> acts, String orgName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => GPOAPreviewDialog(
+        organization: widget.orgData ?? {'name': orgName, 'type': 'College Student Council'},
+        activities: acts,
+        president: const {'full_name': 'Student Leader'},
+        adviser: const {'full_name': 'Faculty Adviser'},
+        fileName: 'GPOA_${orgName.replaceAll(" ", "_")}.pdf',
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final orgNameFilter = widget.orgData != null ? (widget.orgData!['name'] ?? '').toString().toLowerCase() : '';
+    final archivedDocs = <Map<String, dynamic>>[];
+
+    // 1. Process GPOAs - EXACTLY 1 GPOA ENTRY PER ORGANIZATION
+    if (_selectedCategory == 'All' || _selectedCategory == 'GPOA') {
+      final Map<String, List<Map<String, dynamic>>> orgActsMap = {};
+      final Map<String, String> orgNamesMap = {};
+
+      for (var act in widget.activities) {
+        final orgId = act['organization_id']?.toString() ?? widget.orgData?['id']?.toString() ?? 'unknown';
+        final orgName = (act['organization_name'] ?? widget.orgData?['name'] ?? 'Organization').toString();
+
+        if (orgNameFilter.isNotEmpty && !orgName.toLowerCase().contains(orgNameFilter)) {
+          continue;
+        }
+
+        orgNamesMap[orgId] = orgName;
+        orgActsMap.putIfAbsent(orgId, () => []).add(act);
+      }
+
+      orgActsMap.forEach((orgId, acts) {
+        final orgName = orgNamesMap[orgId] ?? 'Organization';
+
+        final query = _searchQuery.toLowerCase();
+        if (query.isNotEmpty && !orgName.toLowerCase().contains(query)) {
+          return;
+        }
+
+        archivedDocs.add({
+          'type': 'GPOA',
+          'title': 'Approved Annual GPOA - $orgName',
+          'org_name': orgName,
+          'date': 'SY $_schoolYear',
+          'color': const Color(0xFF4F46E5),
+          'icon': Icons.description_rounded,
+          'acts': acts,
+          'is_gpoa': true,
+        });
+      });
+    }
+
+    // 2. Process Approved Event Letters
+    for (var act in widget.activities) {
+      final actTitle = (act['title'] ?? 'Untitled Activity').toString();
+      final orgName = (act['organization_name'] ?? widget.orgData?['name'] ?? 'Organization').toString();
+
+      if (orgNameFilter.isNotEmpty && !orgName.toLowerCase().contains(orgNameFilter)) {
+        continue;
+      }
+
+      final query = _searchQuery.toLowerCase();
+      if (query.isNotEmpty && !actTitle.toLowerCase().contains(query) && !orgName.toLowerCase().contains(query)) {
+        continue;
+      }
+
+      if (act['letter_url'] != null && act['letter_url'].toString().isNotEmpty) {
+        if (_selectedCategory == 'All' || _selectedCategory == 'GPOA') {
+          archivedDocs.add({
+            'type': 'Approved Letter',
+            'title': 'Approved Event Letter - $actTitle',
+            'org_name': orgName,
+            'date': act['proposed_date']?.toString().split('T').first ?? 'SY $_schoolYear',
+            'color': const Color(0xFF0284C7),
+            'icon': Icons.mark_as_unread_rounded,
+            'file_url': act['letter_url'],
+            'act': act,
+            'is_gpoa': false,
+          });
+        }
+      }
+    }
+
+    // 2. Process Accomplishment Reports from Supabase
+    for (var rep in _accomplishmentReports) {
+      final act = rep['activities'] ?? {};
+      final actTitle = (act['title'] ?? rep['title'] ?? 'Activity Report').toString();
+      final orgName = (rep['organization_name'] ?? widget.orgData?['name'] ?? 'Organization').toString();
+
+      if (orgNameFilter.isNotEmpty && !orgName.toLowerCase().contains(orgNameFilter)) {
+        continue;
+      }
+
+      final query = _searchQuery.toLowerCase();
+      if (query.isNotEmpty && !actTitle.toLowerCase().contains(query) && !orgName.toLowerCase().contains(query)) {
+        continue;
+      }
+
+      final rawUrls = rep['file_urls'] ?? rep['report_url'] ?? rep['attachment_url'];
+      String? fileUrl;
+      if (rawUrls is List && rawUrls.isNotEmpty) {
+        fileUrl = rawUrls.first.toString();
+      } else if (rawUrls is String && rawUrls.isNotEmpty) {
+        fileUrl = rawUrls;
+      }
+
+      if (_selectedCategory == 'All' || _selectedCategory == 'Accomplishment') {
+        archivedDocs.add({
+          'type': 'Accomplishment Report',
+          'title': 'Accomplishment Report - $actTitle',
+          'org_name': orgName,
+          'date': rep['created_at']?.toString().split('T').first ?? 'SY $_schoolYear',
+          'color': const Color(0xFF0D9488),
+          'icon': Icons.assignment_turned_in_rounded,
+          'file_url': fileUrl,
+          'act': act,
+          'is_gpoa': false,
+        });
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(36),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: const Color(0xFF6366F1).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(16)),
+                    child: const Icon(Icons.folder_special_rounded, color: Color(0xFF6366F1), size: 28),
+                  ),
+                  const SizedBox(width: 16),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Digital Archives', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                      Text('Centralized repository of GPOAs, Accomplishment Reports, and Financial Proofs', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+                    ],
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade300)),
+                child: DropdownButton<String>(
+                  value: _schoolYear,
+                  underline: const SizedBox(),
+                  items: ['2024-2025', '2025-2026', '2026-2027'].map((sy) => DropdownMenuItem(value: sy, child: Text('SY $sy'))).toList(),
+                  onChanged: (val) {
+                    if (val != null) setState(() => _schoolYear = val);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  onChanged: (v) => setState(() => _searchQuery = v),
+                  decoration: InputDecoration(
+                    hintText: 'Search by document title, activity, or organization…',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Wrap(
+                spacing: 8,
+                children: ['All', 'GPOA', 'Accomplishment', 'Financial'].map((cat) {
+                  final isSel = _selectedCategory == cat;
+                  return ChoiceChip(
+                    label: Text(cat),
+                    selected: isSel,
+                    onSelected: (s) {
+                      if (s) setState(() => _selectedCategory = cat);
+                    },
+                    selectedColor: const Color(0xFF6366F1),
+                    labelStyle: TextStyle(color: isSel ? Colors.white : const Color(0xFF475569), fontWeight: FontWeight.bold),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+          Expanded(
+            child: _isLoadingReports
+                ? const Center(child: CircularProgressIndicator())
+                : archivedDocs.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(Icons.inventory_2_outlined, size: 48, color: Color(0xFF94A3B8)),
+                            SizedBox(height: 12),
+                            Text('No archived documents match your criteria.', style: TextStyle(fontSize: 14, color: Color(0xFF64748B))),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: archivedDocs.length,
+                        itemBuilder: (ctx, idx) {
+                          final doc = archivedDocs[idx];
+                          final Color col = doc['color'];
+                          final IconData icon = doc['icon'];
+                          final isGPOA = doc['is_gpoa'] == true;
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.grey.shade200),
+                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))],
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(color: col.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+                                  child: Icon(icon, color: col, size: 24),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(doc['title'].toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1E293B))),
+                                      const SizedBox(height: 4),
+                                      Text('${doc['org_name']} • ${doc['date']}', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                                    ],
+                                  ),
+                                ),
+                                ElevatedButton.icon(
+                                  onPressed: () {
+                                    if (isGPOA && doc['acts'] != null) {
+                                      final actsList = List<Map<String, dynamic>>.from(doc['acts'] as List);
+                                      _openGPOADialog(actsList, doc['org_name'].toString());
+                                    } else if (doc['file_url'] != null && doc['file_url'].toString().isNotEmpty) {
+                                      AppUtils.showTopToast(context, 'Opening document URL: ${doc['file_url']}');
+                                    } else {
+                                      AppUtils.showTopToast(context, 'Viewing ${doc['title']}...');
+                                    }
+                                  },
+                                  icon: Icon(isGPOA ? Icons.picture_as_pdf_rounded : Icons.remove_red_eye_rounded, size: 16),
+                                  label: Text(isGPOA ? 'View GPOA' : 'View File'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: col,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+          ),
         ],
       ),
     );

@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:csuatlasf/utils/app_utils.dart';
+import 'package:csuatlasf/utils/pdf_generator.dart';
 import 'package:csuatlasf/widgets/common_ui.dart';
+import 'package:csuatlasf/widgets/csc_scoring_components.dart';
 import 'package:csuatlasf/widgets/gpoa_details.dart';
 import 'package:csuatlasf/widgets/pdf_preview_dialog.dart';
 
@@ -19,7 +23,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   bool _isSidebarCollapsed = false;
   String _activePage = 'Dashboard';
   bool _isLoading = true;
-  String _searchQuery = '';
+  final String _searchQuery = '';
   List<Map<String, dynamic>> _organizations = [];
   List<Map<String, dynamic>> _activities = [];
   List<Map<String, dynamic>> _profiles = [];
@@ -50,22 +54,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }));
     _subscriptions.add(_supabase.from('activities').stream(primaryKey: ['id']).listen((data) {
       if (mounted) {
-        final now = DateTime.now();
-        for (var item in data) {
-          if (item['status'] == 'Scheduled' && item['proposed_date'] != null) {
-            try {
-              final eventDate = DateTime.parse(item['proposed_date'].toString()).toLocal();
-              final duration = AppUtils.parseDuration(item['time_frame']);
-              if (eventDate.add(duration).isBefore(now)) {
-                _supabase.from('activities').update({'status': 'Completed'}).eq('id', item['id']);
-              }
-            } catch (_) {}
-          }
-        }
         setState(() {
           _activities = List<Map<String, dynamic>>.from(data);
           _isLoading = false;
         });
+        _checkAndReportAutoCompletion();
       }
     }));
     _subscriptions.add(_supabase.from('profiles').stream(primaryKey: ['id']).listen((data) {
@@ -75,6 +68,23 @@ class _AdminDashboardState extends State<AdminDashboard> {
         });
       }
     }));
+  }
+
+  void _checkAndReportAutoCompletion() {
+    final now = DateTime.now();
+    for (var item in _activities) {
+      if (item['status'] == 'Scheduled' && item['proposed_date'] != null) {
+        try {
+          final eventDate = DateTime.parse(item['proposed_date'].toString()).toLocal();
+          final duration = AppUtils.parseDuration(item['time_frame']);
+          if (eventDate.add(duration).isBefore(now)) {
+            // Efficiency: We don't await here to not block the UI, 
+            // and the stream will eventually refresh the state.
+            _supabase.from('activities').update({'status': 'Completed'}).eq('id', item['id']).then((_) {});
+          }
+        } catch (_) {}
+      }
+    }
   }
 
   Future<void> _fetchInitialData() async {
@@ -203,7 +213,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           Expanded(
             child: Column(
               children: [
-                _AdminTopBar(onLogout: _showLogoutDialog, onProfile: () => _onPageSelected('Profile'), onSearch: (q) => setState(() => _searchQuery = q)),
+                _AdminTopBar(onLogout: _showLogoutDialog, onProfile: () => _onPageSelected('Profile'), onNavigate: _onPageSelected),
                 Expanded(child: AnimatedSwitcher(duration: const Duration(milliseconds: 200), child: _buildBody())),
               ],
             ),
@@ -221,9 +231,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
       case 'Manage Events': return _ManageEventsView(activities: _activities, organizations: _organizations, onRefresh: _fetchInitialData);
       case 'Manage Users': return _ManageUsersView(organizations: _organizations, profiles: _profiles, onRefresh: _fetchInitialData, searchQuery: _searchQuery);
       case 'Manage Re-Accreditation': return const _ManageReAccreditationView();
-      case 'Add Scores': return _AddScoresView(activities: _activities, organizations: _organizations, onRefresh: _fetchInitialData);
+      case 'Manage Scores':
+      case 'Add Scores':
+        return _AddScoresView(activities: _activities, organizations: _organizations, onRefresh: _fetchInitialData);
       case 'Accomplishment Reports': return _AccomplishmentReportsView(activities: _activities, onRefresh: _fetchInitialData);
       case 'GPOA Reports': return _GPOAReportsView(organizations: _organizations, activities: _activities, profiles: _profiles);
+      case 'Archives': return _ArchivesView(activities: _activities, organizations: _organizations);
       case 'View Ranks': return _RankingsView(organizations: _organizations);
       case 'Profile': return const _ProfileView();
       default: return _DashboardContent(onAction: _onPageSelected, activities: _activities, organizations: _organizations);
@@ -290,11 +303,12 @@ class _AdminSidebar extends StatelessWidget {
                   _SidebarItem(icon: Icons.manage_accounts_rounded, title: 'Manage Users', isSelected: activePage == 'Manage Users', isCollapsed: isCollapsed, onTap: () => onPageSelected('Manage Users')),
                   _SidebarItem(icon: Icons.sync_rounded, title: 'Manage Re-Accreditation', isSelected: activePage == 'Manage Re-Accreditation', isCollapsed: isCollapsed, onTap: () => onPageSelected('Manage Re-Accreditation')),
                   if (!isCollapsed) const _SidebarHeader(title: 'SCORING & EVALUATION'),
-                  _SidebarItem(icon: Icons.score_rounded, title: 'Add Scores', isSelected: activePage == 'Add Scores', isCollapsed: isCollapsed, onTap: () => onPageSelected('Add Scores')),
+                  _SidebarItem(icon: Icons.rate_review_rounded, title: 'Manage Scores', isSelected: activePage == 'Manage Scores' || activePage == 'Add Scores', isCollapsed: isCollapsed, onTap: () => onPageSelected('Manage Scores')),
                   _SidebarItem(icon: Icons.emoji_events_rounded, title: 'View Ranks', isSelected: activePage == 'View Ranks', isCollapsed: isCollapsed, onTap: () => onPageSelected('View Ranks')),
                   if (!isCollapsed) const _SidebarHeader(title: 'REPORTS'),
                   _SidebarItem(icon: Icons.print_rounded, title: 'GPOA Reports', isSelected: activePage == 'GPOA Reports', isCollapsed: isCollapsed, onTap: () => onPageSelected('GPOA Reports')),
                   _SidebarItem(icon: Icons.assignment_rounded, title: 'Accomplishment Reports', isSelected: activePage == 'Accomplishment Reports', isCollapsed: isCollapsed, onTap: () => onPageSelected('Accomplishment Reports')),
+                  _SidebarItem(icon: Icons.folder_special_rounded, title: 'Archives', isSelected: activePage == 'Archives', isCollapsed: isCollapsed, onTap: () => onPageSelected('Archives')),
                 ],
               ),
             ),
@@ -360,8 +374,9 @@ class _SidebarHeader extends StatelessWidget {
 
 class _AdminTopBar extends StatelessWidget {
   final VoidCallback onLogout, onProfile;
-  final Function(String)? onSearch;
-  const _AdminTopBar({required this.onLogout, required this.onProfile, this.onSearch});
+  final Function(String)? onNavigate;
+  const _AdminTopBar({required this.onLogout, required this.onProfile, this.onNavigate});
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -370,26 +385,24 @@ class _AdminTopBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 32),
       child: Row(
         children: [
-          Expanded(
-            child: Container(
-              height: 48,
-              decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFE2E8F0))),
-              child: TextField(
-                onChanged: onSearch,
-                decoration: const InputDecoration(
-                  hintText: 'Search anything...',
-                  hintStyle: TextStyle(fontSize: 14, color: Color(0xFF94A3B8)),
-                  prefixIcon: Icon(Icons.search_rounded, size: 20, color: Color(0xFF64748B)),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: 14),
-                ),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: const Color(0xFF6366F1).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.admin_panel_settings_rounded, color: Color(0xFF6366F1), size: 22),
               ),
-            ),
+              const SizedBox(width: 12),
+              const Text(
+                'Cagayan State University - OSDW Portal',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Color(0xFF0F172A), letterSpacing: -0.5),
+              ),
+            ],
           ),
-          const SizedBox(width: 32),
+          const Spacer(),
           Container(
             decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(12)),
-            child: IconButton(icon: const Icon(Icons.notifications_none_rounded, color: Color(0xFF64748B)), onPressed: () {}),
+            child: NotificationInboxButton(onNotificationTap: onNavigate),
           ),
           const SizedBox(width: 24),
           const Column(
@@ -437,8 +450,9 @@ class _DashboardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final activeActivities = activities.where((a) => a['is_archived'] != true).toList();
     final today = DateTime.now();
-    final todayActivities = activities.where((a) {
+    final todayActivities = activeActivities.where((a) {
       if (a['proposed_date'] == null) {
         return false;
       }
@@ -447,7 +461,7 @@ class _DashboardContent extends StatelessWidget {
         return date.year == today.year && date.month == today.month && date.day == today.day;
       } catch (_) { return false; }
     }).toList();
-    final pendingAction = activities.where((a) => a['status'] == 'Endorsed' || a['status'] == 'Awaiting Date Approval').toList();
+    final pendingAction = activeActivities.where((a) => a['status'] == 'Endorsed' || a['status'] == 'Awaiting Date Approval').toList();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(40),
@@ -486,7 +500,7 @@ class _DashboardContent extends StatelessWidget {
                 flex: 1,
                 child: Column(
                   children: [
-                    _TopOrganizationsCard(activities: activities, organizations: organizations),
+                    _TopOrganizationsCard(activities: activeActivities, organizations: organizations),
                     const SizedBox(height: 32),
                     const _SystemStatusCard(),
                   ],
@@ -629,7 +643,7 @@ class _ActivityTile extends StatelessWidget {
               context: context,
               builder: (c) => Dialog(
                 child: Container(
-                  width: 1000,
+                  constraints: const BoxConstraints(maxWidth: 1000),
                   padding: const EdgeInsets.all(32),
                   child: SingleChildScrollView(
                     child: Column(
@@ -791,10 +805,19 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
   @override
   Widget build(BuildContext context) {
     final List<Map<String, dynamic>> orgsToDisplay = _selectedOrgId == null ? widget.organizations : widget.organizations.where((o) => o['id'].toString() == _selectedOrgId).toList();
-    final pendingApprovals = widget.activities.where((a) => a['status'] == 'Endorsed' || a['status'] == 'Needs Revision').toList();
+    final activeActivities = widget.activities.where((a) => a['is_archived'] != true).toList();
+    final archivedActivities = widget.activities.where((a) => a['is_archived'] == true && (_selectedOrgId == null || a['organization_id']?.toString() == _selectedOrgId)).toList();
+    final pendingApprovals = activeActivities.where((a) {
+      final matchesOrganization = _selectedOrgId == null ||
+          a['organization_id']?.toString() == _selectedOrgId;
+      final status = a['status']?.toString();
+      return matchesOrganization &&
+          ['Pending', 'Endorsed', 'Awaiting Date Approval', 'Needs Revision']
+              .contains(status);
+    }).toList();
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Padding(
         padding: const EdgeInsets.all(40),
         child: Column(
@@ -834,7 +857,8 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
                 dividerColor: Colors.transparent,
                 tabs: [
                   Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.notification_important_rounded, size: 18), const SizedBox(width: 8), Text('Action Required (${pendingApprovals.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
-                  const Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.inventory_2_rounded, size: 18), SizedBox(width: 8), Text('Organizational Archives', style: TextStyle(fontWeight: FontWeight.bold))])),
+                  const Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.inventory_2_rounded, size: 18), SizedBox(width: 8), Text('GPOA by Organization', style: TextStyle(fontWeight: FontWeight.bold))])),
+                  Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.archive_outlined, size: 18), const SizedBox(width: 8), Text('Archived GPOA (${archivedActivities.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
                 ],
               ),
             ),
@@ -854,7 +878,7 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
                     itemCount: orgsToDisplay.length,
                     itemBuilder: (context, index) {
                       final org = orgsToDisplay[index];
-                      final orgActivities = widget.activities.where((a) => a['organization_id']?.toString() == org['id']).toList();
+                      final orgActivities = activeActivities.where((a) => a['organization_id']?.toString() == org['id']).toList();
                       return Container(
                         margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.withValues(alpha: 0.1))),
@@ -871,6 +895,19 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
                       );
                     },
                   ),
+                  archivedActivities.isEmpty
+                      ? const Center(child: Text('No archived GPOA activities.'))
+                      : ListView.builder(
+                          itemCount: archivedActivities.length,
+                          itemBuilder: (context, index) {
+                            final activity = archivedActivities[index];
+                            final org = widget.organizations.firstWhere(
+                              (o) => o['id'].toString() == activity['organization_id']?.toString(),
+                              orElse: () => {'name': 'Unknown Org'},
+                            );
+                            return _buildGPOAListTile(activity, org);
+                          },
+                        ),
                 ],
               ),
             ),
@@ -894,7 +931,28 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
             Text('Submitted: ${AppUtils.formatDateTime(act['created_at'])}', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
           ],
         ),
-        trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: act['is_archived'] == true ? 'Restore GPOA' : 'Archive GPOA',
+              icon: Icon(act['is_archived'] == true ? Icons.unarchive_outlined : Icons.archive_outlined, color: const Color(0xFF64748B)),
+              onPressed: () async {
+                final archived = act['is_archived'] == true;
+                try {
+                  await Supabase.instance.client.from('activities').update({'is_archived': !archived}).eq('id', act['id']);
+                  if (mounted) {
+                    AppUtils.showTopToast(context, archived ? 'GPOA restored.' : 'GPOA archived.');
+                    widget.onRefresh();
+                  }
+                } catch (e) {
+                  if (mounted) AppUtils.showTopToast(context, 'Could not update archive: $e', isError: true);
+                }
+              },
+            ),
+            const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+          ],
+        ),
         onTap: () => _showGPOADetailsDialog(context, act, org),
       ),
     );
@@ -905,7 +963,7 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
       context: context,
       builder: (context) => Dialog(
         child: Container(
-          width: 1000,
+          constraints: const BoxConstraints(maxWidth: 1000),
           padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1140,7 +1198,8 @@ class _ManageEventsViewState extends State<_ManageEventsView> {
   String? _selectedOrgId;
   @override
   Widget build(BuildContext context) {
-    final awaiting = widget.activities.where((a) => a['status'] == 'Awaiting Date Approval').toList();
+    final activeActivities = widget.activities.where((a) => a['is_archived'] != true).toList();
+    final awaiting = activeActivities.where((a) => a['status'] == 'Awaiting Date Approval').toList();
     final List<Map<String, dynamic>> orgsToDisplay = _selectedOrgId == null 
         ? widget.organizations 
         : widget.organizations.where((o) => o['id'].toString() == _selectedOrgId).toList();
@@ -1224,7 +1283,7 @@ class _ManageEventsViewState extends State<_ManageEventsView> {
                     itemCount: orgsToDisplay.length,
                     itemBuilder: (context, index) {
                       final org = orgsToDisplay[index];
-                      final orgActs = widget.activities.where((a) => a['organization_id']?.toString() == org['id'].toString() && ['Approved', 'Scheduled', 'Completed', 'Awaiting Date Approval', 'Needs Revision'].contains(a['status'])).toList();
+                      final orgActs = activeActivities.where((a) => a['organization_id']?.toString() == org['id'].toString() && ['Approved', 'Scheduled', 'Completed', 'Awaiting Date Approval', 'Needs Revision'].contains(a['status'])).toList();
                       
                       return Container(
                         margin: const EdgeInsets.only(bottom: 16),
@@ -1315,7 +1374,7 @@ class _ManageEventsViewState extends State<_ManageEventsView> {
       builder: (ctx) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         child: Container(
-          width: 1000, 
+          constraints: const BoxConstraints(maxWidth: 1000), 
           padding: const EdgeInsets.all(32), 
           child: Column(
             mainAxisSize: MainAxisSize.min, 
@@ -1485,15 +1544,20 @@ class _ManageEventsViewState extends State<_ManageEventsView> {
   }
 }
 
-class _AccomplishmentReportsView extends StatelessWidget {
+class _AccomplishmentReportsView extends StatefulWidget {
   final List<Map<String, dynamic>> activities;
   final VoidCallback onRefresh;
   const _AccomplishmentReportsView({required this.activities, required this.onRefresh});
 
   @override
-  Widget build(BuildContext context) {
-    final reportReady = activities.where((a) => ['Completed', 'Scheduled'].contains(a['status'])).toList();
+  State<_AccomplishmentReportsView> createState() => _AccomplishmentReportsViewState();
+}
 
+class _AccomplishmentReportsViewState extends State<_AccomplishmentReportsView> {
+  bool _showArchived = false;
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(40),
       child: Column(
@@ -1501,112 +1565,143 @@ class _AccomplishmentReportsView extends StatelessWidget {
         children: [
           const Text('Accomplishment Reports', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Color(0xFF0F172A), letterSpacing: -1)),
           const Text('Review and approve accomplishment reports submitted by organizations.', style: TextStyle(color: Color(0xFF64748B), fontSize: 16)),
+          const SizedBox(height: 16),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: false, label: Text('Active'), icon: Icon(Icons.inbox_outlined)),
+              ButtonSegment(value: true, label: Text('Archived'), icon: Icon(Icons.archive_outlined)),
+            ],
+            selected: {_showArchived},
+            onSelectionChanged: (selection) => setState(() => _showArchived = selection.first),
+          ),
           const SizedBox(height: 40),
           Expanded(
-            child: reportReady.isEmpty
-                ? const Center(child: Text('No activities currently require reports.'))
-                : GridView.builder(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 24,
-                      mainAxisSpacing: 24,
-                      childAspectRatio: 1.4,
-                    ),
-                    itemCount: reportReady.length,
-                    itemBuilder: (context, index) {
-                      final act = reportReady[index];
-                      final hasReport = act['report_url'] != null;
-                      final isApproved = act['report_status'] == 'Approved';
+            child: FutureBuilder<List<Map<String, dynamic>>>(
+              key: ValueKey(_showArchived),
+              future: Supabase.instance.client.from('accomplishment_reports').select('*, activities(*)').eq('is_archived', _showArchived).order('report_date', ascending: false),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+                final reports = snapshot.data ?? [];
+                
+                if (reports.isEmpty) {
+                  return const Center(child: Text('No accomplishment reports submitted yet.'));
+                }
 
-                      return Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: Colors.grey.withValues(alpha: 0.1)),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: (isApproved ? Colors.green : (hasReport ? Colors.blue : Colors.orange)).withValues(alpha: 0.1),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      isApproved ? Icons.verified_rounded : (hasReport ? Icons.file_present_rounded : Icons.pending_actions_rounded),
-                                      size: 16,
-                                      color: isApproved ? Colors.green : (hasReport ? Colors.blue : Colors.orange),
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  if (hasReport)
-                                    StatusBadge(status: act['report_status'] ?? 'Submitted'),
-                                ],
-                              ),
-                              const SizedBox(height: 20),
-                              Text(act['title'] ?? 'Untitled', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF1E293B)), maxLines: 2, overflow: TextOverflow.ellipsis),
-                              const Spacer(),
-                              if (hasReport)
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: ElevatedButton(
-                                        onPressed: () => _viewReport(act['report_url']),
-                                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF8FAFC), foregroundColor: const Color(0xFF1E293B), elevation: 0),
-                                        child: const Text('View File'),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    if (!isApproved)
-                                      IconButton(
-                                        onPressed: () => _approveReport(context, act['id']),
-                                        icon: const Icon(Icons.check_circle_rounded, color: Colors.green),
-                                        tooltip: 'Approve Report',
-                                      ),
-                                  ],
-                                )
-                              else
-                                const Text('Waiting for submission...', style: TextStyle(color: Colors.grey, fontSize: 12, fontStyle: FontStyle.italic)),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+                return GridView.builder(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    crossAxisSpacing: 24,
+                    mainAxisSpacing: 24,
+                    childAspectRatio: 1.4,
                   ),
+                  itemCount: reports.length,
+                  itemBuilder: (context, index) {
+                    final report = reports[index];
+                    final activity = report['activities'] ?? {};
+                    final reportStatus = report['status'] ?? 'Pending';
+                    final isApproved = reportStatus == 'Approved';
+                    final statusColor = statusColorFor(reportStatus);
+
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: statusColor.withValues(alpha: 0.22)),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withValues(alpha: 0.09),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Icon(
+                                    isApproved ? Icons.verified_rounded : Icons.file_present_rounded,
+                                    size: 16,
+                                    color: statusColor,
+                                  ),
+                                ),
+                                const Spacer(),
+                                StatusBadge(status: reportStatus),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
+                            Text(activity['title'] ?? 'Untitled Activity', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF1E293B)), maxLines: 2, overflow: TextOverflow.ellipsis),
+                            const Spacer(),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: () => _viewReport(report['attachments']),
+                                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF8FAFC), foregroundColor: const Color(0xFF1E293B), elevation: 0),
+                                    child: const Text('View File'),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                if (!isApproved)
+                                  IconButton(
+                                    onPressed: () => _approveReport(context, report['id']),
+                                    icon: const Icon(Icons.check_circle_rounded, color: Colors.green),
+                                    tooltip: 'Approve Report',
+                                  ),
+                                IconButton(
+                                  tooltip: _showArchived ? 'Restore report' : 'Archive report',
+                                  icon: Icon(_showArchived ? Icons.unarchive_outlined : Icons.archive_outlined, color: const Color(0xFF64748B)),
+                                  onPressed: () => _setReportArchived(context, report['id'], !_showArchived),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
           ),
         ],
       ),
     );
   }
 
-  void _viewReport(dynamic url) async {
-    if (url == null) return;
-    final uri = Uri.parse(url.toString());
+  Future<void> _setReportArchived(BuildContext context, dynamic reportId, bool archived) async {
     try {
-      // ignore: deprecated_member_use
+      await Supabase.instance.client.from('accomplishment_reports').update({'is_archived': archived}).eq('id', reportId);
+      if (context.mounted) {
+        AppUtils.showTopToast(context, archived ? 'Report archived.' : 'Report restored.');
+        setState(() {});
+        widget.onRefresh();
+      }
+    } catch (e) {
+      if (context.mounted) AppUtils.showTopToast(context, 'Could not update archive: $e', isError: true);
+    }
+  }
+
+  void _viewReport(dynamic attachments) async {
+    if (attachments == null || (attachments as List).isEmpty) return;
+    final url = attachments.first.toString();
+    final uri = Uri.parse(url);
+    try {
       if (await canLaunchUrl(uri)) {
-        // ignore: deprecated_member_use
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       }
     } catch (_) {}
   }
 
-  Future<void> _approveReport(BuildContext context, dynamic id) async {
+  Future<void> _approveReport(BuildContext context, dynamic reportId) async {
     try {
-      await Supabase.instance.client.from('activities').update({'report_status': 'Approved'}).eq('id', id);
-      if (context.mounted) {
-        AppUtils.showTopToast(context, 'Report approved successfully!');
-      }
-      onRefresh();
+      await Supabase.instance.client.from('accomplishment_reports').update({'status': 'Approved'}).eq('id', reportId);
+      if (context.mounted) AppUtils.showTopToast(context, 'Report approved successfully!');
+      widget.onRefresh();
     } catch (e) {
-      if (context.mounted) {
-        AppUtils.showTopToast(context, 'Error: $e', isError: true);
-      }
+      if (context.mounted) AppUtils.showTopToast(context, 'Error: $e', isError: true);
     }
   }
 }
@@ -1639,6 +1734,13 @@ class _AddScoresViewState extends State<_AddScoresView> {
     'x': TextEditingController(text: '0'),
   };
 
+  final Map<String, TextEditingController> _levelGridControllers = {};
+
+  final _amountVIIController = TextEditingController();
+  final _amountVIIIController = TextEditingController();
+  final _amountIXController = TextEditingController();
+  final _percentXController = TextEditingController();
+
   double get grandTotal {
     double total = 0;
     _controllers.forEach((key, controller) {
@@ -1647,21 +1749,30 @@ class _AddScoresViewState extends State<_AddScoresView> {
     return total;
   }
 
-  String get adjectivalRating {
-    double total = grandTotal;
-    if (total >= 96) return 'Outstanding';
-    if (total >= 86) return 'Very Satisfactory';
-    if (total >= 76) return 'Satisfactory';
-    if (total >= 66) return 'Fair';
-    return 'Poor';
-  }
+  String get adjectivalRating => getAdjectivalRating(grandTotal);
 
   @override
   void initState() {
     super.initState();
+    _initLevelGridControllers();
     for (var controller in _controllers.values) {
       controller.addListener(() { if (mounted) setState(() {}); });
     }
+  }
+
+  void _initLevelGridControllers() {
+    final levels = ['intl', 'natl', 'regl', 'univ', 'camp', 'coll'];
+    final itemMaxes = {'i': 4, 'ii': 4, 'iii': 5, 'iv': 10, 'v': 10, 'vi': 5};
+
+    itemMaxes.forEach((item, maxActs) {
+      for (int act = 1; act <= maxActs; act++) {
+        for (final lvl in levels) {
+          _levelGridControllers['${item}_${act}_${lvl}_sdg'] ??= TextEditingController();
+          _levelGridControllers['${item}_${act}_${lvl}_pts'] ??= TextEditingController();
+          _levelGridControllers['${item}_${act}_$lvl'] ??= TextEditingController();
+        }
+      }
+    });
   }
 
   @override
@@ -1669,8 +1780,95 @@ class _AddScoresViewState extends State<_AddScoresView> {
     for (var controller in _controllers.values) {
       controller.dispose();
     }
+    for (var controller in _levelGridControllers.values) {
+      controller.dispose();
+    }
+    _amountVIIController.dispose();
+    _amountVIIIController.dispose();
+    _amountIXController.dispose();
+    _percentXController.dispose();
     super.dispose();
   }
+
+  void _onGridInputChanged(String key, int act, String lvl, int maxActs) {
+    final levels = _selectedOrgType == 'Campus Student Council'
+        ? ['intl', 'natl', 'regl', 'univ', 'camp']
+        : ['intl', 'natl', 'regl', 'univ', 'camp', 'coll'];
+
+    final itemMaxes = {'i': 4, 'ii': 4, 'iii': 5, 'iv': 10, 'v': _selectedOrgType == 'Campus Student Council' ? 5 : 10, 'vi': 5};
+    final limit = itemMaxes[key] ?? maxActs;
+
+    int totalActiveSlots = 0;
+    for (int a = 1; a <= maxActs; a++) {
+      for (final l in levels) {
+        final pText = _levelGridControllers['${key}_${a}_${l}_pts']?.text.trim() ?? '';
+        final vText = _levelGridControllers['${key}_${a}_$l']?.text.trim() ?? '';
+        final sText = _levelGridControllers['${key}_${a}_${l}_sdg']?.text.trim() ?? '';
+
+        final pVal = double.tryParse(pText);
+        final vVal = double.tryParse(vText);
+        final sVal = int.tryParse(sText);
+
+        if ((pVal != null && pVal > 0) || (vVal != null && vVal > 0) || (sVal != null && sVal > 0)) {
+          totalActiveSlots++;
+        }
+      }
+    }
+
+    if (totalActiveSlots > limit) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _levelGridControllers['${key}_${act}_${lvl}_pts']?.clear();
+        _levelGridControllers['${key}_${act}_$lvl']?.clear();
+        _levelGridControllers['${key}_${act}_${lvl}_sdg']?.clear();
+        _recalculateItemFromGrid(key);
+        if (mounted) setState(() {});
+      });
+      AppUtils.showTopToast(context, 'Maximum limit of $limit activities reached for this category.', isError: true);
+      return;
+    }
+
+    _recalculateItemFromGrid(key);
+  }
+
+  void _recalculateItemFromGrid(String key) {
+    double total = 0;
+    final levels = _selectedOrgType == 'Campus Student Council'
+        ? ['intl', 'natl', 'regl', 'univ', 'camp']
+        : ['intl', 'natl', 'regl', 'univ', 'camp', 'coll'];
+    final itemMaxes = {'i': 4, 'ii': 4, 'iii': 5, 'iv': 10, 'v': _selectedOrgType == 'Campus Student Council' ? 5 : 10, 'vi': 5};
+    final maxActs = itemMaxes[key] ?? 4;
+
+    for (int act = 1; act <= maxActs; act++) {
+      for (final lvl in levels) {
+        final ptsController = _levelGridControllers['${key}_${act}_${lvl}_pts'];
+        final lvlController = _levelGridControllers['${key}_${act}_$lvl'];
+        final sdgController = _levelGridControllers['${key}_${act}_${lvl}_sdg'];
+
+        final ptsVal = double.tryParse(ptsController?.text ?? '') ??
+            double.tryParse(lvlController?.text ?? '');
+        final sdgVal = int.tryParse(sdgController?.text ?? '');
+
+        if (ptsVal != null && ptsVal > 0) {
+          total += ptsVal;
+        } else if (sdgVal != null && sdgVal > 0) {
+          final computed = (key == 'i' || key == 'ii')
+              ? calculateSDGPoints(lvl, sdgVal, _selectedOrgType)
+              : getCategoricalLevelUnitPoints(lvl, _selectedOrgType);
+          
+          if (ptsController != null && ptsController.text.isEmpty) ptsController.text = computed.toStringAsFixed(1);
+          if (lvlController != null && lvlController.text.isEmpty) lvlController.text = computed.toStringAsFixed(1);
+          total += computed;
+        }
+      }
+    }
+    double maxAllowed = (key == 'iii') ? 5.0 : 10.0;
+    if (total > maxAllowed) {
+      total = maxAllowed;
+    }
+    _controllers[key]?.text = total.toStringAsFixed(1);
+  }
+
+  final Map<String, Map<String, String>> _sessionGridCache = {};
 
   Future<void> _loadEvaluation() async {
     if (_selectedOrgId == null) return;
@@ -1681,6 +1879,10 @@ class _AddScoresViewState extends State<_AddScoresView> {
           .eq('organization_id', _selectedOrgId!)
           .eq('school_year', _schoolYear)
           .maybeSingle();
+
+      for (var c in _levelGridControllers.values) {
+        c.clear();
+      }
 
       if (res != null) {
         setState(() {
@@ -1694,10 +1896,46 @@ class _AddScoresViewState extends State<_AddScoresView> {
           _controllers['viii']!.text = (res['score_viii'] ?? 0).toString();
           _controllers['ix']!.text = (res['score_ix'] ?? 0).toString();
           _controllers['x']!.text = (res['score_x'] ?? 0).toString();
+
+          final rawRating = res['adjectival_rating']?.toString() ?? '';
+          if (rawRating.contains('|')) {
+            final jsonStr = rawRating.substring(rawRating.indexOf('|') + 1);
+            try {
+              final Map<String, dynamic> decoded = jsonDecode(jsonStr);
+              decoded.forEach((k, v) {
+                final keyStr = k.toString();
+                if (_levelGridControllers.containsKey(keyStr)) {
+                  _levelGridControllers[keyStr]!.text = v.toString();
+                }
+              });
+            } catch (_) {}
+          }
+
+          final cachedGrid = _sessionGridCache[_selectedOrgId];
+          if (cachedGrid != null) {
+            cachedGrid.forEach((k, v) {
+              if (_levelGridControllers.containsKey(k)) {
+                _levelGridControllers[k]!.text = v;
+              }
+            });
+          }
         });
       } else {
         setState(() {
           for (var c in _controllers.values) { c.text = '0'; }
+          _amountVIIController.clear();
+          _amountVIIIController.clear();
+          _amountIXController.clear();
+          _percentXController.clear();
+
+          final cachedGrid = _sessionGridCache[_selectedOrgId];
+          if (cachedGrid != null) {
+            cachedGrid.forEach((k, v) {
+              if (_levelGridControllers.containsKey(k)) {
+                _levelGridControllers[k]!.text = v;
+              }
+            });
+          }
         });
       }
     } catch (_) {}
@@ -1711,6 +1949,16 @@ class _AddScoresViewState extends State<_AddScoresView> {
 
     setState(() => _isSaving = true);
     try {
+      final Map<String, String> gridData = {};
+      _levelGridControllers.forEach((key, controller) {
+        if (controller.text.trim().isNotEmpty && controller.text.trim() != '—') {
+          gridData[key] = controller.text.trim();
+        }
+      });
+      _sessionGridCache[_selectedOrgId!] = gridData;
+
+      final ratingWithGrid = '$adjectivalRating|${jsonEncode(gridData)}';
+
       final data = {
         'organization_id': _selectedOrgId,
         'school_year': _schoolYear,
@@ -1725,7 +1973,7 @@ class _AddScoresViewState extends State<_AddScoresView> {
         'score_ix': double.tryParse(_controllers['ix']!.text) ?? 0,
         'score_x': double.tryParse(_controllers['x']!.text) ?? 0,
         'grand_total': grandTotal,
-        'adjectival_rating': adjectivalRating,
+        'adjectival_rating': ratingWithGrid,
         'updated_at': DateTime.now().toIso8601String(),
       };
 
@@ -1735,64 +1983,732 @@ class _AddScoresViewState extends State<_AddScoresView> {
         widget.onRefresh();
       }
     } catch (e) {
-      if (mounted) AppUtils.showTopToast(context, 'Error: $e', isError: true);
+      if (mounted) AppUtils.showTopToast(context, 'Error saving evaluation: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
   }
 
+  Future<void> _exportPdf() async {
+    if (_selectedOrgId == null) {
+      AppUtils.showTopToast(context, 'Please select an organization first.', isError: true);
+      return;
+    }
+
+    final keys = ['i', 'ii', 'iii', 'iv', 'v', 'vi'];
+    for (final k in keys) {
+      _recalculateItemFromGrid(k);
+    }
+
+    final org = widget.organizations.firstWhere((o) => o['id'].toString() == _selectedOrgId, orElse: () => {'name': 'Selected Organization'});
+    final Map<String, double> scores = {};
+    _controllers.forEach((key, controller) {
+      scores[key] = double.tryParse(controller.text) ?? 0;
+    });
+
+    final Map<String, String> gridValues = {};
+    _levelGridControllers.forEach((key, controller) {
+      if (controller.text.trim().isNotEmpty) {
+        gridValues[key] = controller.text.trim();
+      }
+    });
+
+    await CSCEvaluationPdfGenerator.showPdfPreviewDialog(
+      context,
+      organization: org,
+      schoolYear: _schoolYear,
+      scores: scores,
+      gridValues: gridValues,
+      grandTotal: grandTotal,
+      adjectivalRating: adjectivalRating,
+      orgType: _selectedOrgType ?? 'College Student Council',
+    );
+  }
+
+  Future<void> _downloadPdfFile() async {
+    if (_selectedOrgId == null) {
+      AppUtils.showTopToast(context, 'Please select an organization first.', isError: true);
+      return;
+    }
+
+    final keys = ['i', 'ii', 'iii', 'iv', 'v', 'vi'];
+    for (final k in keys) {
+      _recalculateItemFromGrid(k);
+    }
+
+    final org = widget.organizations.firstWhere((o) => o['id'].toString() == _selectedOrgId, orElse: () => {'name': 'Selected Organization'});
+    final Map<String, double> scores = {};
+    _controllers.forEach((key, controller) {
+      scores[key] = double.tryParse(controller.text) ?? 0;
+    });
+
+    final Map<String, String> gridValues = {};
+    _levelGridControllers.forEach((key, controller) {
+      if (controller.text.trim().isNotEmpty) {
+        gridValues[key] = controller.text.trim();
+      }
+    });
+
+    await CSCEvaluationPdfGenerator.saveAndDownloadPdf(
+      context,
+      organization: org,
+      schoolYear: _schoolYear,
+      scores: scores,
+      gridValues: gridValues,
+      grandTotal: grandTotal,
+      adjectivalRating: adjectivalRating,
+      orgType: _selectedOrgType ?? 'College Student Council',
+    );
+  }
+
+  String? _selectedOrgType;
+
+  List<Map<String, dynamic>> get _filteredOrganizations {
+    if (_selectedOrgType == null) return widget.organizations;
+    final target = _selectedOrgType!.toLowerCase();
+    final matches = widget.organizations.where((o) {
+      final type = (o['type'] ?? '').toString().toLowerCase();
+      if (target.contains('college')) return type.contains('college');
+      if (target.contains('campus')) return type.contains('campus');
+      if (target.contains('specialized')) return type.contains('specialized') || type.contains('special');
+      return type == target;
+    }).toList();
+    return matches.isNotEmpty ? matches : widget.organizations;
+  }
+
+  double _sheetZoomScale = 1.45;
+
   @override
   Widget build(BuildContext context) {
+    if (_selectedOrgType == null) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+        child: Center(child: _buildTypeSelectionScreen()),
+      );
+    }
+
+    final isSpecialized = (_selectedOrgType ?? '').toLowerCase().contains('special');
+    final double baseUnscaledHeight = isSpecialized ? 5200.0 : 6500.0;
+    final double extraZoomScrollHeight = _sheetZoomScale > 1.0 ? baseUnscaledHeight * (_sheetZoomScale - 1.0) : 0.0;
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(vertical: 40),
+      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
       child: Center(
         child: Column(
           children: [
             _buildTopPanel(),
+            const SizedBox(height: 24),
+            _buildScoreBanner(),
             const SizedBox(height: 32),
-            _buildFolioPage(1, _buildPage1Content()),
-            const SizedBox(height: 40),
-            _buildFolioPage(2, _buildPage2Content()),
-            const SizedBox(height: 40),
-            _buildFolioPage(3, _buildPage3Content()),
-            const SizedBox(height: 40),
-            _buildFolioPage(4, _buildPage4Content()),
-            const SizedBox(height: 40),
-            _buildFolioPage(5, _buildPage5Content()),
-            const SizedBox(height: 100),
+            _buildZoomControls(),
+            const SizedBox(height: 24),
+            Transform.scale(
+              scale: _sheetZoomScale,
+              alignment: Alignment.topCenter,
+              child: Column(
+                children: [
+                  _buildFolioPage(1, _buildPage1Content()),
+                  const SizedBox(height: 40),
+                  _buildFolioPage(2, _buildPage2Content()),
+                  const SizedBox(height: 40),
+                  _buildFolioPage(3, _buildPage3Content()),
+                  const SizedBox(height: 40),
+                  _buildFolioPage(4, _buildPage4Content()),
+                  if (!isSpecialized) ...[
+                    const SizedBox(height: 40),
+                    _buildFolioPage(5, _buildPage5Content()),
+                  ],
+                ],
+              ),
+            ),
+            SizedBox(height: 80 + extraZoomScrollHeight),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTopPanel() {
+  Widget _buildTypeSelectionScreen() {
     return Container(
-      width: 850,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10)]),
-      child: Row(
+      constraints: const BoxConstraints(maxWidth: 1000),
+      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+      child: Column(
         children: [
-          const Icon(Icons.stars_rounded, color: Color(0xFF6366F1), size: 28),
-          const SizedBox(width: 16),
-          const Text('CSC EVALUATION PANEL', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF1E293B))),
-          const SizedBox(width: 40),
-          SizedBox(
-            width: 300,
-            child: DropdownButtonFormField<String>(
-              initialValue: _selectedOrgId,
-              hint: const Text('Select Organization'),
-              decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 16)),
-              items: widget.organizations.map((o) => DropdownMenuItem(value: o['id'].toString(), child: Text(o['name'] ?? '', overflow: TextOverflow.ellipsis))).toList(),
-              onChanged: (val) { setState(() => _selectedOrgId = val); _loadEvaluation(); },
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF6366F1).withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.rate_review_rounded, size: 52, color: Color(0xFF6366F1)),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Manage Organization Evaluations',
+            style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: Color(0xFF1E293B)),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Select a classification to score, manage evaluations, or review sheets for SY 2025-2026',
+            style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 48),
+          Wrap(
+            spacing: 24,
+            runSpacing: 24,
+            alignment: WrapAlignment.center,
+            children: [
+              _buildTypeCard(
+                type: 'College Student Council',
+                icon: Icons.account_balance_rounded,
+                color: const Color(0xFF4F46E5),
+                bgLight: const Color(0xFFEEF2FF),
+                title: 'College Student Council',
+                subtitle: 'Evaluate Academic College Student Councils',
+              ),
+              _buildTypeCard(
+                type: 'Campus Student Council',
+                icon: Icons.domain_rounded,
+                color: const Color(0xFF0D9488),
+                bgLight: const Color(0xFFCCFBF1),
+                title: 'Campus Student Council',
+                subtitle: 'Evaluate Main Campus Student Government',
+              ),
+              _buildTypeCard(
+                type: 'Specialized Organization',
+                icon: Icons.stars_rounded,
+                color: const Color(0xFFD97706),
+                bgLight: const Color(0xFFFEF3C7),
+                title: 'Specialized Organization',
+                subtitle: 'Evaluate Interest, Cultural, & Special Orgs',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showCategoryEvaluationsDialog(String categoryType) async {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Container(
+            width: 760,
+            constraints: const BoxConstraints(maxHeight: 650),
+            padding: const EdgeInsets.all(24),
+            child: FutureBuilder<List<Map<String, dynamic>>>(
+              future: Supabase.instance.client
+                  .from('organization_evaluations')
+                  .select('*, organizations(*)')
+                  .eq('school_year', _schoolYear),
+              builder: (ctx, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const SizedBox(height: 200, child: Center(child: CircularProgressIndicator()));
+                }
+
+                final allEvals = snapshot.data ?? [];
+                
+                final targetType = categoryType.toLowerCase();
+                final categoryOrgs = widget.organizations.where((o) {
+                  final orgType = (o['type'] ?? '').toString().toLowerCase();
+                  if (targetType.contains('college')) return orgType.contains('college');
+                  if (targetType.contains('campus')) return orgType.contains('campus');
+                  if (targetType.contains('specialized')) return orgType.contains('specialized') || orgType.contains('special');
+                  return true;
+                }).toList();
+
+                final Map<String, Map<String, dynamic>> evalMap = {};
+                for (var eval in allEvals) {
+                  final orgId = eval['organization_id']?.toString();
+                  if (orgId != null) evalMap[orgId] = eval;
+                }
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.assessment_rounded, color: Color(0xFF6366F1), size: 26),
+                            const SizedBox(width: 10),
+                            Text(
+                              '$categoryType - Organizations & Evaluations',
+                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () => Navigator.of(dialogCtx).pop(),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 20),
+                    if (categoryOrgs.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 40),
+                        child: Center(
+                          child: Text(
+                            'No organizations found for this category.',
+                            style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+                          ),
+                        ),
+                      )
+                    else
+                      Flexible(
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: categoryOrgs.length,
+                          itemBuilder: (c, idx) {
+                            final org = categoryOrgs[idx];
+                            final orgId = org['id']?.toString();
+                            final orgName = (org['name'] ?? 'Unknown Org').toString().toUpperCase();
+                            final eval = evalMap[orgId];
+                            final isEvaluated = eval != null;
+
+                            final total = isEvaluated ? ((eval['grand_total'] as num?)?.toDouble() ?? 0.0) : 0.0;
+                            final rawRating = isEvaluated ? (eval['adjectival_rating'] ?? 'Pending').toString() : 'Pending Evaluation';
+                            final rating = rawRating.contains('|') ? rawRating.split('|').first : rawRating;
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: isEvaluated ? const Color(0xFFF8FAFC) : Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: isEvaluated ? const Color(0xFFCBD5E1) : const Color(0xFFE2E8F0)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(orgName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B))),
+                                        const SizedBox(height: 6),
+                                        Row(
+                                          children: [
+                                            if (isEvaluated) ...[
+                                              Text('Score: ${total.toStringAsFixed(2)} pts', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF4F46E5))),
+                                              const SizedBox(width: 10),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                decoration: BoxDecoration(color: const Color(0xFF10B981).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
+                                                child: Text(rating.toUpperCase(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
+                                              ),
+                                            ] else ...[
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                decoration: BoxDecoration(color: Colors.grey.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
+                                                child: const Text('NOT EVALUATED YET', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Row(
+                                    children: [
+                                      OutlinedButton.icon(
+                                        onPressed: () async {
+                                          final Map<String, double> orgScores = {};
+                                          final Map<String, String> gridData = {};
+
+                                          if (isEvaluated) {
+                                            orgScores['i'] = (eval['score_i'] as num?)?.toDouble() ?? 0;
+                                            orgScores['ii'] = (eval['score_ii'] as num?)?.toDouble() ?? 0;
+                                            orgScores['iii'] = (eval['score_iii'] as num?)?.toDouble() ?? 0;
+                                            orgScores['iv'] = (eval['score_iv'] as num?)?.toDouble() ?? 0;
+                                            orgScores['v'] = (eval['score_v'] as num?)?.toDouble() ?? 0;
+                                            orgScores['vi'] = (eval['score_vi'] as num?)?.toDouble() ?? 0;
+                                            orgScores['vii'] = (eval['score_vii'] as num?)?.toDouble() ?? 0;
+                                            orgScores['viii'] = (eval['score_viii'] as num?)?.toDouble() ?? 0;
+                                            orgScores['ix'] = (eval['score_ix'] as num?)?.toDouble() ?? 0;
+                                            orgScores['x'] = (eval['score_x'] as num?)?.toDouble() ?? 0;
+
+                                            final rawR = (eval['adjectival_rating'] ?? '').toString();
+                                            if (rawR.contains('|')) {
+                                              final jsonStr = rawR.substring(rawR.indexOf('|') + 1);
+                                              try {
+                                                final Map<String, dynamic> decoded = jsonDecode(jsonStr);
+                                                decoded.forEach((k, v) => gridData[k.toString()] = v.toString());
+                                              } catch (_) {}
+                                            }
+                                          }
+
+                                          await CSCEvaluationPdfGenerator.showPdfPreviewDialog(
+                                            context,
+                                            organization: org,
+                                            schoolYear: _schoolYear,
+                                            scores: orgScores,
+                                            gridValues: gridData,
+                                            grandTotal: total,
+                                            adjectivalRating: rating,
+                                            orgType: categoryType,
+                                          );
+                                        },
+                                        icon: const Icon(Icons.print_rounded, size: 16),
+                                        label: const Text('Preview PDF'),
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: const Color(0xFF10B981),
+                                          side: const BorderSide(color: Color(0xFF10B981)),
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      ElevatedButton.icon(
+                                        onPressed: () {
+                                          Navigator.of(dialogCtx).pop();
+                                          setState(() {
+                                            _selectedOrgType = categoryType;
+                                            _selectedOrgId = orgId;
+                                            _loadEvaluation();
+                                          });
+                                        },
+                                        icon: Icon(isEvaluated ? Icons.edit_note_rounded : Icons.add_chart_rounded, size: 16),
+                                        label: Text(isEvaluated ? 'Load Sheet' : 'Open Sheet'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF4F46E5),
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ),
-          const SizedBox(width: 16),
-          ElevatedButton.icon(
-            onPressed: _isSaving ? null : _saveEvaluation,
-            icon: _isSaving ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.save_rounded),
-            label: const Text('Commit Record'),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+        );
+      },
+    );
+  }
+
+  Widget _buildTypeCard({
+    required String type,
+    required IconData icon,
+    required Color color,
+    required Color bgLight,
+    required String title,
+    required String subtitle,
+  }) {
+    return Container(
+      width: 280,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: bgLight,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, size: 36, color: color),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                setState(() {
+                  _selectedOrgType = type;
+                  _selectedOrgId = null;
+                  final available = _filteredOrganizations;
+                  if (available.isNotEmpty) {
+                    _selectedOrgId = available.first['id'].toString();
+                    _loadEvaluation();
+                  }
+                });
+              },
+              icon: const Icon(Icons.assignment_turned_in_rounded, size: 16),
+              label: const Text('Evaluate Category'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: color,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _showCategoryEvaluationsDialog(type),
+              icon: const Icon(Icons.visibility_rounded, size: 16),
+              label: const Text('View Evaluations'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: color,
+                side: BorderSide(color: color.withValues(alpha: 0.5)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildZoomControls() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.zoom_in_map_rounded, size: 18, color: Color(0xFF64748B)),
+          const SizedBox(width: 8),
+          const Text('Sheet Zoom:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+          const SizedBox(width: 12),
+          IconButton(
+            tooltip: 'Zoom Out',
+            icon: const Icon(Icons.remove_circle_outline_rounded, color: Color(0xFF4F46E5), size: 22),
+            onPressed: () {
+              setState(() {
+                if (_sheetZoomScale > 0.6) _sheetZoomScale -= 0.15;
+              });
+            },
+          ),
+          InkWell(
+            onTap: () => setState(() => _sheetZoomScale = 1.45),
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6366F1).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '${(_sheetZoomScale * 100).round()}%',
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Color(0xFF4F46E5)),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Zoom In',
+            icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF4F46E5), size: 22),
+            onPressed: () {
+              setState(() {
+                if (_sheetZoomScale < 2.2) _sheetZoomScale += 0.15;
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopPanel() {
+    final displayOrgs = _filteredOrganizations;
+
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 1000),
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 16, offset: const Offset(0, 4))],
+      ),
+      child: Wrap(
+        spacing: 16,
+        runSpacing: 16,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        alignment: WrapAlignment.spaceBetween,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.stars_rounded, color: Color(0xFF6366F1), size: 28),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${(_selectedOrgType ?? 'COLLEGE STUDENT COUNCIL').toUpperCase()} EVALUATION',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF1E293B)),
+                  ),
+                  const SizedBox(height: 2),
+                  InkWell(
+                    onTap: () => setState(() {
+                      _selectedOrgType = null;
+                      _selectedOrgId = null;
+                    }),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.swap_horiz_rounded, size: 14, color: Color(0xFF4F46E5)),
+                        SizedBox(width: 4),
+                        Text(
+                          'Switch Category',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF4F46E5), decoration: TextDecoration.underline),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 240,
+                child: DropdownButtonFormField<String>(
+                  initialValue: _selectedOrgId,
+                  isExpanded: true,
+                  hint: Text('Select ${_selectedOrgType ?? 'Organization'}', overflow: TextOverflow.ellipsis),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  ),
+                  items: displayOrgs.map((o) => DropdownMenuItem(value: o['id'].toString(), child: Text(o['name'] ?? '', overflow: TextOverflow.ellipsis))).toList(),
+                  onChanged: (val) { setState(() => _selectedOrgId = val); _loadEvaluation(); },
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: _exportPdf,
+                icon: const Icon(Icons.print_rounded, size: 18),
+                label: const Text('Export 5-Page PDF'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF10B981),
+                  side: const BorderSide(color: Color(0xFF10B981)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: _downloadPdfFile,
+                icon: const Icon(Icons.download_rounded, size: 18),
+                label: const Text('Save PDF File'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: _isSaving ? null : _saveEvaluation,
+                icon: _isSaving ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.save_rounded, size: 18),
+                label: const Text('Commit Record'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6366F1),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScoreBanner() {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 1000),
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: const Color(0xFF6366F1).withValues(alpha: 0.25), blurRadius: 20, offset: const Offset(0, 8))],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('TOTAL EVALUATION SCORE', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
+              const SizedBox(height: 4),
+              Text(
+                grandTotal.toStringAsFixed(2),
+                style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w900, letterSpacing: -1),
+              ),
+            ],
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(100),
+              border: Border.all(color: Colors.white30),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.workspace_premium_rounded, color: Colors.amber, size: 22),
+                const SizedBox(width: 8),
+                Text(
+                  adjectivalRating.toUpperCase(),
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 1),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1801,23 +2717,43 @@ class _AddScoresViewState extends State<_AddScoresView> {
 
   Widget _buildFolioPage(int num, Widget content) {
     return Container(
-      width: 850,
-      constraints: const BoxConstraints(minHeight: 1300),
-      padding: const EdgeInsets.all(60),
-      decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.grey.shade300), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 20, offset: const Offset(0, 10))]),
+      constraints: const BoxConstraints(maxWidth: 900, minHeight: 1250),
+      width: 900,
+      padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 36),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.grey.shade300),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 10))],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _buildFolioHeader(),
-          const SizedBox(height: 30),
-          content,
-          const SizedBox(height: 60),
-          const Divider(color: Colors.black, thickness: 1.5),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('$num | P a g e', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-              const Text('Search for the Most Outstanding College Student Council Organization SY 2025-2026', style: TextStyle(fontSize: 9, fontStyle: FontStyle.italic)),
+              _buildFolioHeader(),
+              const SizedBox(height: 16),
+              content,
+            ],
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 24),
+              const Divider(color: Colors.black, thickness: 1.0),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Text('$num | P a g e  ', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black)),
+                  Expanded(
+                    child: Text(
+                      'Search for the Most Outstanding ${_selectedOrgType ?? 'College Student Council'} Organization SY 2025-2026',
+                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ],
@@ -1826,292 +2762,780 @@ class _AddScoresViewState extends State<_AddScoresView> {
   }
 
   Widget _buildFolioHeader() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final typeLower = (_selectedOrgType ?? '').toLowerCase();
+    final isCampus = typeLower.contains('campus');
+    final isSpecialized = typeLower.contains('specialized') || typeLower.contains('special');
+
+    final campusHeader = isSpecialized ? 'ANDREWS CAMPUS' : (isCampus ? 'Central Administration' : 'LAL-LO CAMPUS');
+    final locationHeader = isSpecialized ? 'Caritan, Tuguegarao City, Cagayan' : (isCampus ? 'Caritan, Tuguegarao City, Cagayan' : 'Sta. Maria, Lal-lo, Cagayan');
+    final emailHeader = isSpecialized ? 'osdw@csu.edu.ph' : (isCampus ? 'osdw@csu.edu.ph' : 'osdw.lallo@csu.edu.ph');
+    final fbHeader = isSpecialized ? 'Ossw Andrews' : (isCampus ? 'CSU Office of Student Development & Welfare' : 'Osdw Lallo');
+
+    return Column(
       children: [
-        Image.asset('assets/images/csulogo.png', height: 80, errorBuilder: (c, e, s) => const Icon(Icons.school, size: 80, color: Colors.red)),
-        const SizedBox(width: 15),
-        const SizedBox(
-          width: 485,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Text('REPUBLIC OF THE PHILIPPINES', style: TextStyle(fontSize: 10, color: Color(0xFFB71C1C), fontWeight: FontWeight.bold)),
-              Text('CAGAYAN STATE UNIVERSITY', style: TextStyle(fontSize: 16, color: Color(0xFFB71C1C), fontWeight: FontWeight.w900)),
-              Text('ANDREWS CAMPUS', style: TextStyle(fontSize: 12, color: Color(0xFFB71C1C), fontWeight: FontWeight.bold)),
-              Text('Caritan, Tuguegarao City, Cagayan', style: TextStyle(fontSize: 10, color: Color(0xFFB71C1C))),
-            ],
-          ),
-        ),
-        const SizedBox(width: 15),
-        const Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Email Address: osdw@csu.edu.ph', style: TextStyle(fontSize: 9)),
-            Text('Website: www.csu.edu.ph', style: TextStyle(fontSize: 9)),
-            Text('Facebook Page: Osdw Andrews', style: TextStyle(fontSize: 9)),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('REPUBLIC OF THE PHILIPPINES', style: TextStyle(fontSize: 10, color: Color(0xFFB71C1C), fontWeight: FontWeight.normal)),
+                const Text('CAGAYAN STATE UNIVERSITY', style: TextStyle(fontSize: 16, color: Color(0xFFB71C1C), fontWeight: FontWeight.w900)),
+                Text(campusHeader, style: const TextStyle(fontSize: 12, color: Color(0xFFB71C1C), fontWeight: FontWeight.bold)),
+                Text(locationHeader, style: const TextStyle(fontSize: 10, color: Color(0xFFB71C1C), fontStyle: FontStyle.italic)),
+              ],
+            ),
+            Expanded(
+              child: Center(
+                child: Image.asset('assets/images/csulogo.png', height: 60, errorBuilder: (c, e, s) => const Icon(Icons.school, size: 60, color: Color(0xFFB71C1C))),
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('Email Address: $emailHeader', style: const TextStyle(fontSize: 9, color: Color(0xFFB71C1C), fontStyle: FontStyle.italic, decoration: TextDecoration.underline)),
+                const Text('Website: www.csu.edu.ph', style: TextStyle(fontSize: 9, color: Color(0xFFB71C1C), fontStyle: FontStyle.italic, decoration: TextDecoration.underline)),
+                Text('Facebook Page: $fbHeader', style: const TextStyle(fontSize: 9, color: Color(0xFFB71C1C), fontStyle: FontStyle.italic)),
+              ],
+            ),
           ],
         ),
+        const SizedBox(height: 10),
+        const Text(
+          'OFFICE OF STUDENT DEVELOPMENT AND WELFARE',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.black, letterSpacing: 0.5),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 6),
+        const Divider(color: Colors.black, thickness: 1.5, height: 1),
       ],
     );
   }
 
   Widget _buildPage1Content() {
+    final isSpecialized = (_selectedOrgType ?? '').toLowerCase().contains('special');
     final org = widget.organizations.firstWhere((o) => o['id'].toString() == _selectedOrgId, orElse: () => {'name': '________________'});
+    final campusName = isSpecialized ? 'ANDREWS CAMPUS' : (_selectedOrgType == 'Campus Student Council' ? 'CENTRAL ADMINISTRATION' : 'LAL-LO CAMPUS');
+
+    if (isSpecialized) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Text(
+              'CRITERIA FOR THE SEARCH FOR OUTSTANDING SPECIALIZED ORGANIZATION SY 2025-2026',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 0.5),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(child: _buildInfoField('Organization:', org['name'].toString().toUpperCase())),
+              const SizedBox(width: 20),
+              Expanded(child: _buildInfoField('Points:', grandTotal.toStringAsFixed(2))),
+            ],
+          ),
+          Row(
+            children: [
+              Expanded(child: _buildInfoField('Campus:', campusName)),
+              const SizedBox(width: 20),
+              Expanded(child: _buildInfoField('Adjectival Rating:', adjectivalRating.toUpperCase())),
+            ],
+          ),
+          const SizedBox(height: 24),
+          const Center(child: Text('ACTIVITIES CONDUCTED/ SPONSORED', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, decoration: TextDecoration.underline))),
+          const SizedBox(height: 16),
+          _buildSpecializedPage1Matrix(),
+          const SizedBox(height: 16),
+          const Text(
+            'For Items III, IV, V and VI, the number of SDGs is no longer required, as discussed during the OSDW 3rd Quarter Meeting held last August 15, 2024. All activities under these items are now considered specific and aligned with their respective objectives.',
+            style: TextStyle(fontSize: 8.5, fontStyle: FontStyle.italic),
+          ),
+          const SizedBox(height: 16),
+          _buildCategoricalHeader(),
+          _buildActivityCategoryTable(
+            title: 'III. Makakalikasan/ Clean and Green Activities and Projects (10 points)\nMax. No. of Activities: 10',
+            docs: '• Approved letter\n• Office Order/ Special Order\n• MOA/MOU\n• Consent letter/Invitation Letter\n• Narrative Report\n• Certificate signed by partner agency\n• Attendance Sheet\n• Documentation',
+            key: 'iii',
+            maxActs: 10,
+            isSDGMatrix: false,
+          ),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Center(
-          child: Column(
-            children: [
-              Text('OFFICE OF STUDENT DEVELOPMENT AND WELFARE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, decoration: TextDecoration.underline)),
-              SizedBox(height: 4),
-              Text('CRITERIA FOR THE SEARCH FOR OUTSTANDING COLLEGE STUDENT COUNCIL SY 2025-2026', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 0.5)),
-            ],
+        Center(
+          child: Text(
+            'CRITERIA FOR THE SEARCH FOR OUTSTANDING ${(_selectedOrgType ?? 'COLLEGE STUDENT COUNCIL').toUpperCase()} SY 2025-2026',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 0.5),
+            textAlign: TextAlign.center,
           ),
         ),
-        const SizedBox(height: 40),
+        const SizedBox(height: 20),
         Row(
           children: [
-            SizedBox(width: 350, child: _buildInfoField('Organization:', org['name'].toString().toUpperCase())),
+            Expanded(child: _buildInfoField('Organization:', org['name'].toString().toUpperCase())),
             const SizedBox(width: 20),
-            SizedBox(width: 350, child: _buildInfoField('Points:', grandTotal.toStringAsFixed(2))),
+            Expanded(child: _buildInfoField('Points:', grandTotal.toStringAsFixed(2))),
           ],
         ),
         Row(
           children: [
-            SizedBox(width: 350, child: _buildInfoField('Campus:', 'ANDREWS CAMPUS')),
+            Expanded(child: _buildInfoField('Campus:', campusName)),
             const SizedBox(width: 20),
-            SizedBox(width: 350, child: _buildInfoField('Adjectival Rating:', adjectivalRating.toUpperCase())),
+            Expanded(child: _buildInfoField('Adjectival Rating:', adjectivalRating.toUpperCase())),
           ],
         ),
-        const SizedBox(height: 40),
-        const Center(child: Text('I. & II. ACTIVITIES CONDUCTED / SPONSORED', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, decoration: TextDecoration.underline))),
-        const SizedBox(height: 25),
+        const SizedBox(height: 24),
+        const Center(child: Text('ACTIVITIES CONDUCTED/ SPONSORED', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, decoration: TextDecoration.underline))),
+        const SizedBox(height: 16),
         _buildPage1Matrix(),
+        const SizedBox(height: 16),
+        const Text(
+          'For Items III, IV, V and VI, the number of SDGs is no longer required, as discussed during the OSDW 3rd Quarter Meeting held last August 15, 2024. All activities under these items are now considered specific and aligned with their respective objectives.',
+          style: TextStyle(fontSize: 8.5, fontStyle: FontStyle.italic),
+        ),
+        const SizedBox(height: 16),
+        _buildCategoricalHeader(),
+        _buildActivityCategoryTable(
+          title: 'III. Religious Activities (5 points)\nMax. No. of Activities: 5',
+          docs: '• Approved Letter\n• Documentation\n• Narrative Report\n• Attendance Sheet (Except for Holy Mass and Praying of Rosary)\n• Concept Paper',
+          key: 'iii',
+          maxActs: 5,
+          isSDGMatrix: false,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSpecializedPage1Matrix() {
+    return Column(
+      children: [
+        Table(
+          border: TableBorder.all(color: Colors.black, width: 0.5),
+          columnWidths: const {
+            0: FixedColumnWidth(125), 1: FixedColumnWidth(125),
+            2: FlexColumnWidth(1), 3: FlexColumnWidth(1),
+            4: FlexColumnWidth(1), 5: FlexColumnWidth(1),
+            6: FlexColumnWidth(1), 7: FlexColumnWidth(1),
+          },
+          children: [
+            _buildMatrixIAndIIHeader(),
+            _buildMatrixCriteriaRow(['3', '5.5'], ['3', '5.0'], ['5', '4.5'], ['5', '4.0'], ['7', '3.5'], ['10', '3.0']),
+            _buildMatrixCriteriaRow(['2', '5.0'], ['2', '4.5'], ['4', '4.0'], ['4', '3.5'], ['6', '3.0'], ['9', '2.5']),
+            _buildMatrixCriteriaRow(['1', '4.5'], ['1', '4.0'], ['3', '3.5'], ['3', '3.0'], ['5', '2.5'], ['8', '2.0']),
+            TableRow(
+              children: [
+                const TableCell(
+                  verticalAlignment: TableCellVerticalAlignment.middle,
+                  child: Padding(
+                    padding: EdgeInsets.all(5),
+                    child: Text('Attendance should be 50%+1 of the total target participants.', style: TextStyle(fontSize: 8, fontStyle: FontStyle.italic, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(),
+              ],
+            ),
+          ],
+        ),
+        _buildActivityCategoryTable(
+          title: 'I. Symposium /Seminars Conducted (20 points)\nMax. No. of Activities: 7',
+          docs: '• Approved letter\n• Program\n• Sample Certificate\n• Attendance Sheet\n• Documentation\n• Narrative Report\n• Evaluation Result\n• Concept Paper',
+          key: 'i',
+          maxActs: 7,
+          isSDGMatrix: true,
+        ),
+        _buildActivityCategoryTable(
+          title: 'II. Activities Conducted /Sponsored in line with the nature of the organization (30 points)\nMax. No. of Activities: 10',
+          docs: '• Approved letter\n• Program\n• Sample Certificate\n• Attendance Sheet\n• Documentation\n• Narrative Report\n• Evaluation Result\n• Concept Paper',
+          key: 'ii',
+          maxActs: 10,
+          isSDGMatrix: true,
+        ),
       ],
     );
   }
 
   Widget _buildInfoField(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
           Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-          const SizedBox(width: 10),
-          Container(width: 200, padding: const EdgeInsets.only(bottom: 2), decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.black))), child: Text(value, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600))),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.only(bottom: 2),
+              decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.black))),
+              child: Text(value, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+            ),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildPage1Matrix() {
-    return Table(
-      border: TableBorder.all(color: Colors.black),
-      columnWidths: const {
-        0: FixedColumnWidth(130),
-        1: FixedColumnWidth(110),
-        2: FlexColumnWidth(1),
-        3: FlexColumnWidth(1),
-        4: FlexColumnWidth(1),
-        5: FlexColumnWidth(1),
-        6: FlexColumnWidth(1),
-        7: FlexColumnWidth(1),
-        8: FixedColumnWidth(70),
-      },
+    final isCampus = _selectedOrgType == 'Campus Student Council';
+    final colWidths = isCampus ? const {
+      0: FixedColumnWidth(125), 1: FixedColumnWidth(125),
+      2: FlexColumnWidth(1), 3: FlexColumnWidth(1),
+      4: FlexColumnWidth(1), 5: FlexColumnWidth(1),
+      6: FlexColumnWidth(1),
+    } : const {
+      0: FixedColumnWidth(125), 1: FixedColumnWidth(125),
+      2: FlexColumnWidth(1), 3: FlexColumnWidth(1),
+      4: FlexColumnWidth(1), 5: FlexColumnWidth(1),
+      6: FlexColumnWidth(1), 7: FlexColumnWidth(1),
+    };
+
+    return Column(
       children: [
-        _buildMatrixIAndIIHeader(),
-        _buildMatrixCriteriaRow(['3', '2.5'], ['3', '2.5'], ['5', '2.5'], ['5', '2.0'], ['5', '1.5'], ['7', '2.5']),
-        _buildMatrixCriteriaRow(['2', '2.0'], ['2', '2.0'], ['4', '2.0'], ['4', '1.5'], ['4', '1.0'], ['6', '2.0']),
-        _buildMatrixCriteriaRow(['1', '1.5'], ['1', '1.5'], ['3', '1.5'], ['3', '1.0'], ['3', '0.5'], ['5', '1.5']),
-        TableRow(
+        Table(
+          border: TableBorder.all(color: Colors.black, width: 0.5),
+          columnWidths: colWidths,
           children: [
-            const TableCell(
-              verticalAlignment: TableCellVerticalAlignment.middle,
-              child: Padding(
-                padding: EdgeInsets.all(6),
-                child: Text('Note: Attendance should be 50%+1 of the total target participants.', style: TextStyle(fontSize: 7.5, fontStyle: FontStyle.italic, fontWeight: FontWeight.bold)),
+            _buildMatrixIAndIIHeader(),
+            if (isCampus) ...[
+              _buildMatrixCriteriaRow(['3', '1.5'], ['5', '2.5'], ['5', '2.0'], ['5', '1.5'], ['7', '2.5']),
+              _buildMatrixCriteriaRow(['2', '1.0'], ['4', '2.0'], ['4', '1.5'], ['4', '1.0'], ['6', '2.0']),
+              _buildMatrixCriteriaRow(['1', '0.5'], ['3', '1.5'], ['3', '1.0'], ['3', '0.5'], ['5', '1.5']),
+              TableRow(
+                children: [
+                  const TableCell(
+                    verticalAlignment: TableCellVerticalAlignment.middle,
+                    child: Padding(
+                      padding: EdgeInsets.all(5),
+                      child: Text('Attendance should be 50%+1 of the total target participants.', style: TextStyle(fontSize: 8, fontStyle: FontStyle.italic, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(),
+                  const SizedBox(),
+                  Center(child: Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: Row(children: [
+                    Expanded(child: Center(child: const Text('2', style: TextStyle(fontSize: 9)))),
+                    Container(width: 0.5, height: 12, color: Colors.black26),
+                    Expanded(child: Center(child: const Text('1', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)))),
+                  ]))),
+                  const SizedBox(), const SizedBox(), const SizedBox(),
+                ],
               ),
-            ),
-            const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(),
+              TableRow(
+                children: [
+                  const SizedBox(), const SizedBox(), const SizedBox(),
+                  Center(child: Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: Row(children: [
+                    Expanded(child: Center(child: const Text('1', style: TextStyle(fontSize: 9)))),
+                    Container(width: 0.5, height: 12, color: Colors.black26),
+                    Expanded(child: Center(child: const Text('.5', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)))),
+                  ]))),
+                  const SizedBox(), const SizedBox(), const SizedBox(),
+                ],
+              ),
+            ] else ...[
+              _buildMatrixCriteriaRow(['3', '2.5'], ['3', '2.5'], ['5', '2.5'], ['5', '2.0'], ['5', '1.5'], ['7', '2.5']),
+              _buildMatrixCriteriaRow(['2', '2.0'], ['2', '2.0'], ['4', '2.0'], ['4', '1.5'], ['4', '1.0'], ['6', '2.0']),
+              _buildMatrixCriteriaRow(['1', '1.5'], ['1', '1.5'], ['3', '1.5'], ['3', '1.0'], ['3', '0.5'], ['5', '1.5']),
+              TableRow(
+                children: [
+                  const TableCell(
+                    verticalAlignment: TableCellVerticalAlignment.middle,
+                    child: Padding(
+                      padding: EdgeInsets.all(5),
+                      child: Text('Attendance should be 50%+1 of total target participants.', style: TextStyle(fontSize: 8, fontStyle: FontStyle.italic, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(), const SizedBox(),
+                ],
+              ),
+            ],
           ],
         ),
-        _buildMatrixActivityRow('I. Symposium/ Seminars Conducted (10 pts)\nMax Activities: 4', 'i'),
-        _buildMatrixActivityRow('II. Convocations/ Programs and Literary Activities (10 pts)\nMax Activities: 4', 'ii'),
+        _buildActivityCategoryTable(
+          title: 'I. Symposium/ Seminars Conducted (10 points)\nMax. No. of Activities: 4',
+          docs: '• Approved letter\n• Program\n• Sample Certificate\n• Attendance Sheet\n• Documentation\n• Narrative Report\n• Evaluation Result\n• Concept Paper',
+          key: 'i',
+          maxActs: 4,
+          isSDGMatrix: true,
+        ),
+        _buildActivityCategoryTable(
+          title: 'II. Convocations/ Programs and Literary Activities (10 points)\nMax. No. of Activities: 4',
+          docs: '• Approved letter\n• Program\n• Sample Certificate\n• Attendance Sheet\n• Documentation\n• Narrative Report\n• Evaluation Result\n• Concept Paper',
+          key: 'ii',
+          maxActs: 4,
+          isSDGMatrix: true,
+        ),
       ],
     );
   }
 
   TableRow _buildMatrixIAndIIHeader() {
+    final isCampus = _selectedOrgType == 'Campus Student Council';
+    final levelsList = isCampus ? [
+      'Int\'l Level\n(at least 3 countries)',
+      'National Level',
+      'Regional Level/\nProvincial',
+      'University Wide/\nMunicipality',
+      'Campus Wide/\nBarangay',
+    ] : [
+      'Int\'l Level\n(at least 3 countries)',
+      'National Level',
+      'Regional Level/\nProvincial',
+      'University Wide/\nMunicipality',
+      'Campus Wide/\nBarangay',
+      'College Level'
+    ];
+
     return TableRow(
       decoration: BoxDecoration(color: Colors.grey.shade200),
       children: [
-        const TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: Center(child: Text('Activities', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold)))),
-        const TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: Center(child: Text('Supporting Docs', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold)))),
-        for (final l in ['Int\'l', 'Nat\'l', 'Reg\'l', 'Univ', 'Camp', 'Coll'])
+        const TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: Center(child: Padding(padding: EdgeInsets.all(5), child: Text('Activities', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))))),
+        const TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: Center(child: Padding(padding: EdgeInsets.all(5), child: Text('Supporting Docs', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))))),
+        for (final l in levelsList)
           TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: Column(children: [
-            Center(child: Padding(padding: const EdgeInsets.all(2), child: Text(l, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold)))),
+            Center(child: Padding(padding: const EdgeInsets.all(3), child: Text(l, textAlign: TextAlign.center, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)))),
             const Divider(height: 1, color: Colors.black),
             Row(children: [
-              SizedBox(width: 30, child: Center(child: Text('No. of SDGs', style: const TextStyle(fontSize: 5, fontWeight: FontWeight.bold)))),
-              Container(width: 1, height: 10, color: Colors.black),
-              SizedBox(width: 20, child: Center(child: Text('Pts', style: const TextStyle(fontSize: 5, fontWeight: FontWeight.bold)))),
+              Expanded(child: Center(child: Text('SDGs', style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold)))),
+              Container(width: 0.5, height: 12, color: Colors.black),
+              Expanded(child: Center(child: Text('Pts', style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold)))),
             ])
           ])),
-        const TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: Center(child: Text('Pts', style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold)))),
       ],
     );
   }
 
-  TableRow _buildMatrixCriteriaRow(List<String> l1, List<String> l2, List<String> l3, List<String> l4, List<String> l5, List<String> l6) {
+  TableRow _buildMatrixCriteriaRow(List<String> l1, List<String> l2, List<String> l3, List<String> l4, List<String> l5, [List<String>? l6]) {
+    final pairs = [l1, l2, l3, l4, l5];
+    if (l6 != null && _selectedOrgType != 'Campus Student Council') pairs.add(l6);
+
     return TableRow(
       children: [
         const SizedBox(), const SizedBox(),
-        for (final pair in [l1, l2, l3, l4, l5, l6])
-          Center(child: Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: Row(children: [
-            SizedBox(width: 25, child: Center(child: Text(pair[0], style: const TextStyle(fontSize: 7.5)))),
-            Container(width: 0.5, height: 10, color: Colors.black26),
-            SizedBox(width: 20, child: Center(child: Text(pair[1], style: const TextStyle(fontSize: 7.5, fontWeight: FontWeight.bold)))),
-          ]))),
-        const SizedBox(),
+        for (final pair in pairs)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              children: [
+                Expanded(child: Center(child: Text(pair[0], style: const TextStyle(fontSize: 9)))),
+                Container(width: 0.5, height: 12, color: Colors.grey.shade400),
+                Expanded(child: Center(child: Text(pair[1], style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)))),
+              ],
+            ),
+          ),
       ],
     );
   }
 
-  TableRow _buildMatrixActivityRow(String title, String key) {
-    return TableRow(
+  Widget _buildCategoricalHeader() {
+    final isCampus = _selectedOrgType == 'Campus Student Council';
+    final levelsList = isCampus ? [
+      'International Level\n(at least 3 countries)\n3 points',
+      'National Level\n2.5 points',
+      'Regional Level/\nProvincial\n2 points',
+      'University Wide/\nMunicipality\n1.5 points',
+      'Campus Wide/\nBarangay\n1 point',
+    ] : [
+      'International Level\n(at least 3 countries)\n3.5 points',
+      'National Level\n3 points',
+      'Regional Level/\nProvincial\n2.5 points',
+      'University Wide/\nMunicipality\n2 points',
+      'Campus Wide/\nBarangay\n1.5 points',
+      'College Level\n1 point'
+    ];
+
+    final colWidths = isCampus ? const {
+      0: FixedColumnWidth(125), 1: FixedColumnWidth(125),
+      2: FlexColumnWidth(1), 3: FlexColumnWidth(1),
+      4: FlexColumnWidth(1), 5: FlexColumnWidth(1),
+      6: FlexColumnWidth(1),
+    } : const {
+      0: FixedColumnWidth(125), 1: FixedColumnWidth(125),
+      2: FlexColumnWidth(1), 3: FlexColumnWidth(1),
+      4: FlexColumnWidth(1), 5: FlexColumnWidth(1),
+      6: FlexColumnWidth(1), 7: FlexColumnWidth(1),
+    };
+
+    return Table(
+      border: TableBorder.all(color: Colors.black, width: 0.5),
+      columnWidths: colWidths,
       children: [
-        Padding(padding: const EdgeInsets.all(8), child: Text(title, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold))),
-        const Padding(padding: EdgeInsets.all(8), child: Text('• Approved letter\n• Narrative Report\n• Attendance Sheet\n• Program/ Invitation', style: TextStyle(fontSize: 7.5))),
-        for (var i = 0; i < 6; i++)
-          TableCell(
-            verticalAlignment: TableCellVerticalAlignment.middle,
-            child: SizedBox(
-              height: 70,
-              child: Row(
-                children: [
-                  Container(width: 25, decoration: const BoxDecoration(border: Border(right: BorderSide(color: Colors.black54, width: 0.5)))),
-                  const SizedBox(width: 25),
-                ],
+        TableRow(
+          decoration: BoxDecoration(color: Colors.grey.shade200),
+          children: [
+            const TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: Center(child: Padding(padding: EdgeInsets.all(5), child: Text('Activities', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))))),
+            const TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: Center(child: Padding(padding: EdgeInsets.all(5), child: Text('Supporting Documents', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))))),
+            for (final l in levelsList)
+              TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: Center(child: Padding(padding: const EdgeInsets.all(3), child: Text(l, textAlign: TextAlign.center, style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold))))),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActivityCategoryTable({
+    required String title,
+    required String docs,
+    required String key,
+    required int maxActs,
+    required bool isSDGMatrix,
+  }) {
+    final levels = _selectedOrgType == 'Campus Student Council'
+        ? ['intl', 'natl', 'regl', 'univ', 'camp']
+        : ['intl', 'natl', 'regl', 'univ', 'camp', 'coll'];
+    const double rowHeight = 28.0;
+
+    return IntrinsicHeight(
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.black, width: 0.5),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: 125,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                decoration: const BoxDecoration(
+                  border: Border(right: BorderSide(color: Colors.black, width: 0.5)),
+                ),
+                child: Center(
+                  child: Text(
+                    title,
+                    style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
               ),
             ),
-          ),
-        TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: _buildIntegratedInput(key)),
-      ],
+            SizedBox(
+              width: 125,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                decoration: const BoxDecoration(
+                  border: Border(right: BorderSide(color: Colors.black, width: 0.5)),
+                ),
+                child: Center(
+                  child: Text(
+                    docs,
+                    style: const TextStyle(fontSize: 7),
+                    textAlign: TextAlign.left,
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Column(
+                children: List.generate(maxActs, (actIdx) {
+                  final act = actIdx + 1;
+                  return Container(
+                    height: rowHeight,
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: act < maxActs ? Colors.black : Colors.transparent,
+                          width: act < maxActs ? 0.5 : 0.0,
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final lvl in levels)
+                          Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                border: Border(
+                                  right: BorderSide(
+                                    color: lvl != levels.last ? Colors.black : Colors.transparent,
+                                    width: lvl != levels.last ? 0.5 : 0.0,
+                                  ),
+                                ),
+                              ),
+                              child: isSDGMatrix
+                                  ? Row(
+                                      children: [
+                                        Expanded(
+                                          child: Container(
+                                            decoration: const BoxDecoration(
+                                              border: Border(right: BorderSide(color: Colors.black, width: 0.5)),
+                                            ),
+                                            child: Center(
+                                              child: TextField(
+                                                controller: _levelGridControllers['${key}_${act}_${lvl}_sdg'],
+                                                textAlign: TextAlign.center,
+                                                keyboardType: TextInputType.number,
+                                                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                                style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold),
+                                                decoration: const InputDecoration(
+                                                  border: InputBorder.none,
+                                                  isDense: true,
+                                                  contentPadding: EdgeInsets.zero,
+                                                  hintText: '—',
+                                                ),
+                                                onChanged: (val) {
+                                                  if (val.trim().isEmpty) {
+                                                    _levelGridControllers['${key}_${act}_${lvl}_sdg']?.clear();
+                                                  }
+                                                  _onGridInputChanged(key, act, lvl, maxActs);
+                                                },
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: Center(
+                                            child: TextField(
+                                              controller: _levelGridControllers['${key}_${act}_${lvl}_pts'],
+                                              textAlign: TextAlign.center,
+                                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
+                                              style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF4338CA)),
+                                              decoration: const InputDecoration(
+                                                border: InputBorder.none,
+                                                isDense: true,
+                                                contentPadding: EdgeInsets.zero,
+                                                hintText: '—',
+                                              ),
+                                              onChanged: (val) {
+                                                if (val.trim().isEmpty) {
+                                                  _levelGridControllers['${key}_${act}_${lvl}_pts']?.clear();
+                                                  _levelGridControllers['${key}_${act}_$lvl']?.clear();
+                                                }
+                                                _onGridInputChanged(key, act, lvl, maxActs);
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : Center(
+                                      child: TextField(
+                                        controller: _levelGridControllers['${key}_${act}_$lvl'] ?? _levelGridControllers['${key}_${act}_${lvl}_pts'],
+                                        textAlign: TextAlign.center,
+                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
+                                        style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF4338CA)),
+                                        decoration: const InputDecoration(
+                                          border: InputBorder.none,
+                                          isDense: true,
+                                          contentPadding: EdgeInsets.zero,
+                                          hintText: '—',
+                                        ),
+                                        onChanged: (val) {
+                                          final cleanVal = val.trim();
+                                          if (cleanVal.isEmpty) {
+                                            _levelGridControllers['${key}_${act}_${lvl}_pts']?.clear();
+                                            _levelGridControllers['${key}_${act}_$lvl']?.clear();
+                                          } else {
+                                            _levelGridControllers['${key}_${act}_${lvl}_pts']?.text = cleanVal;
+                                            _levelGridControllers['${key}_${act}_$lvl']?.text = cleanVal;
+                                          }
+                                          _onGridInputChanged(key, act, lvl, maxActs);
+                                        },
+                                      ),
+                                    ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildPage2Content() {
+    final isCampus = _selectedOrgType == 'Campus Student Council';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Center(child: Text('III, IV, V, & VI. CATEGORICAL EVALUATION MATRIX', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, decoration: TextDecoration.underline))),
-        const SizedBox(height: 25),
-        _buildCategoricalMatrix(),
-        const SizedBox(height: 20),
-        const Text('Note: Every activity must be anchored to at least one (1) SDG.', style: TextStyle(fontSize: 9, fontStyle: FontStyle.italic, fontWeight: FontWeight.bold)),
-      ],
-    );
-  }
-
-  Widget _buildCategoricalMatrix() {
-    return Table(
-      border: TableBorder.all(color: Colors.black),
-      columnWidths: const {
-        0: FixedColumnWidth(130),
-        1: FixedColumnWidth(110),
-        2: FlexColumnWidth(1), 3: FlexColumnWidth(1),
-        4: FlexColumnWidth(1), 5: FlexColumnWidth(1),
-        6: FlexColumnWidth(1), 7: FlexColumnWidth(1),
-        8: FixedColumnWidth(70),
-      },
-      children: [
-        _buildMatrixIAndIIHeader(),
-        _buildCategoricalRow('III. Religious Activities (5 pts)\nMax Activities: 3', 'Approved Letter, Narrative Report, Certification from Parish Priest/ Minister', 'iii'),
-        _buildCategoricalRow('IV. Socio-Cultural and Sports Activities (10 pts)\nMax Activities: 4', 'Approved Letter, Narrative Report, Pictorials, Result of Competition', 'iv'),
-        _buildCategoricalRow('V. Maka-kalikasan/ Clean and Green Activities (10 pts)\nMax Activities: 4', 'Office Order, MOA/MOU, Certification from Barangay/ Agency', 'v'),
-        _buildCategoricalRow('VI. Extension Services Sponsored/ Conducted (10 pts)\nMax Activities: 4', 'Approved Letter, Certification from Recipient/ Agency, Narrative Report', 'vi'),
-      ],
-    );
-  }
-
-  TableRow _buildCategoricalRow(String title, String docs, String key) {
-    return TableRow(
-      children: [
-        Padding(padding: const EdgeInsets.all(6), child: Text(title, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold))),
-        Padding(padding: const EdgeInsets.all(6), child: Text(docs, style: const TextStyle(fontSize: 7))),
-        for (var i = 0; i < 6; i++)
-          TableCell(
-            verticalAlignment: TableCellVerticalAlignment.middle,
-            child: SizedBox(
-              height: 70,
-              child: Row(
-                children: [
-                  Container(width: 25, decoration: const BoxDecoration(border: Border(right: BorderSide(color: Colors.black54, width: 0.5)))),
-                  const SizedBox(width: 25),
-                ],
-              ),
-            ),
-          ),
-        TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: _buildIntegratedInput(key)),
+        _buildCategoricalHeader(),
+        _buildActivityCategoryTable(
+          title: 'IV. Socio-Cultural and Sports Activities (10 points)\nMax. No. of Activities: 5 for socio-cultural 5 for sports activities',
+          docs: '• Approved letter\n• Program\n• Sample Certificate\n• Attendance Sheet\n• Documentation\n• Narrative Report\n• Evaluation Result\n• Concept Paper',
+          key: 'iv',
+          maxActs: 10,
+          isSDGMatrix: false,
+        ),
+        const SizedBox(height: 16),
+        _buildActivityCategoryTable(
+          title: 'V. Makakalikasan/ Clean and Green Activities and Projects (10 points)\nMax. No. of Activities: ${isCampus ? '5' : '10'}',
+          docs: '• Approved letter\n• Office Order/ Special Order\n• MOA/MOU\n• Consent letter/Invitation Letter\n• Narrative report\n• Certificate signed by partner agency\n• Attendance Sheet\n• Documentation',
+          key: 'v',
+          maxActs: isCampus ? 5 : 10,
+          isSDGMatrix: false,
+        ),
+        const SizedBox(height: 16),
+        _buildActivityCategoryTable(
+          title: 'VI. Extension Services Sponsored/ Conducted (10 points)\nMax. No. of Activities: 5',
+          docs: '• Approved letter\n• Office Order/ Special Order\n• MOA/MOU/ Barangay Resolution\n• Consent/Invitation Letter\n• Narrative report\n• Partner Certificate\n• Attendance Sheet\n• Documentation',
+          key: 'vi',
+          maxActs: 5,
+          isSDGMatrix: false,
+        ),
+        const SizedBox(height: 12),
+        const Text('For activities conducted with co-sponsor, the points will be divided equally. Any Regional Activity conducted should have CHED Endorsement.', style: TextStyle(fontSize: 8, fontStyle: FontStyle.italic)),
+        const SizedBox(height: 24),
+        const Text('VII. Tangible/ Physical Projects (15 points)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+        const Text('• Computation is accumulated amount. Consumables not included. Office equipment for CSC use alone not credited.', style: TextStyle(fontSize: 8.5, fontStyle: FontStyle.italic)),
+        const Text('• Supporting Documents: Approved letter, Project Proposal/Concept Paper, Disbursement Voucher, receipts and photo Documentation', style: TextStyle(fontSize: 8.5, fontStyle: FontStyle.italic)),
+        const SizedBox(height: 12),
+        _buildMappingTable([
+          ['25,000 and below', '1.0'],
+          ['25,001 – 30,000', '2.0'],
+          ['30,001 – 35,000', '3.0'],
+        ]),
       ],
     );
   }
 
   Widget _buildPage3Content() {
+    final isCampus = _selectedOrgType == 'Campus Student Council';
+
+    if (isCampus) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildMappingTable([
+            ['35,001 – 40,000', '4.0'], ['40,001 – 45,000', '5.0'],
+            ['45,001 – 50,000', '6.0'], ['50,001 – 55,000', '7.0'],
+            ['55,001 – 60,000', '8.0'], ['60,001 – 65,000', '9.0'],
+            ['65,001 – 70,000', '10.0'], ['70,001 – 75,000', '11.0'],
+            ['75,001 – 80,000', '12.0'], ['80,001 – 85,000', '13.0'],
+            ['85,001 – 90,000', '14.0'], ['90,001 – 95,000', '15.0'],
+          ], scoreKey: 'vii'),
+          const SizedBox(height: 24),
+          const Text('VIII. Fund Drive/ IGP (10 points) _______________________', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+          const SizedBox(height: 4),
+          const Text('Supporting Documents: Approved letter, Project Proposal/Concept Paper, Disbursement Voucher, Project Income Statement, receipts and photo Documentation', style: TextStyle(fontSize: 8.5, fontStyle: FontStyle.italic)),
+          const SizedBox(height: 12),
+          _buildMappingTable([
+            ['4,001 – 5,000', '1.0'], ['5,001 – 10,000', '1.5'],
+            ['10,001 – 15,000', '2.0'], ['15,001 – 20,000', '2.5'],
+            ['20,001 – 25,000', '3.0'], ['25,001 – 30,000', '3.5'],
+            ['30,001 – 35,000', '4.0'], ['35,001 – 40,000', '4.5'],
+            ['40,001 – 45,000', '5.0'], ['45,001 – 50,000', '5.5'],
+            ['50,001 – 55,000', '6.0'], ['55,001 – 60,000', '6.5'],
+            ['60,001 – 65,000', '7.0'], ['65,001 – 70,000', '7.5'],
+            ['70,001 – 75,000', '8.0'], ['75,001 – 80,000', '8.5'],
+          ]),
+        ],
+      );
+    }
+
+    final tableVIIIRows = [
+      ['4,001 – 5,000', '1.0'], ['5,001 – 10,000', '2.0'],
+      ['10,001 – 15,000', '3.0'], ['15,001 – 20,000', '4.0'],
+      ['20,001 – 25,000', '5.0'], ['25,001 – 30,000', '6.0'],
+      ['30,001 – 35,000', '7.0'], ['35,001 – 40,000', '8.0'],
+      ['40,001 – 45,000', '9.0'], ['45,001 – above', '10.0'],
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('VII. Tangible/ Physical Projects (15 pts)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-        const Text('• Accumulated amount. CSC office equipment alone not credited.', style: TextStyle(fontSize: 9, fontStyle: FontStyle.italic)),
-        const SizedBox(height: 15),
         _buildMappingTable([
-          ['140,001 and above', '15.0'], ['130,001 - 140,000', '14.0'],
-          ['120,001 - 130,000', '13.0'], ['110,001 - 120,000', '12.0'],
-          ['100,001 - 110,000', '11.0'], ['90,001 - 100,000', '10.0'],
-          ['80,001 - 90,000', '9.0'], ['70,001 - 80,000', '8.0'],
-          ['60,001 - 70,000', '7.0'], ['50,001 - 60,000', '6.0'],
-          ['40,001 - 50,000', '5.0'], ['30,001 - 40,000', '4.0'],
-          ['20,001 - 30,000', '3.0'], ['10,001 - 20,000', '2.0'],
-          ['Below 10,000', '1.0'],
+          ['35,001 – 40,000', '4.0'], ['40,001 – 45,000', '5.0'],
+          ['45,001 – 50,000', '6.0'], ['50,001 – 55,000', '7.0'],
+          ['55,001 – 60,000', '8.0'], ['60,001 – 65,000', '9.0'],
+          ['65,001 – 70,000', '10.0'], ['70,001 – 75,000', '11.0'],
+          ['75,001 – 80,000', '12.0'], ['80,001 – 85,000', '13.0'],
+          ['85,001 – 90,000', '14.0'], ['90,001 – 95,000', '15.0'],
         ], scoreKey: 'vii'),
-        const SizedBox(height: 40),
-        const Text('VIII. Fund Drive/ IGP (10 pts)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-        const SizedBox(height: 15),
+        const SizedBox(height: 24),
+        const Text('VIII. Fund Drive/ IGP (10 points)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+        const Text('• Supporting Documents: Approved letter, Project Proposal/Concept Paper, Disbursement Voucher, Project Income Statement, receipts and photo Documentation', style: TextStyle(fontSize: 8.5, fontStyle: FontStyle.italic)),
+        const SizedBox(height: 12),
+        _buildMappingTable(tableVIIIRows, scoreKey: 'viii'),
+        const SizedBox(height: 24),
+        const Text('IX. Financial Assistance given to members (subsidy to activities and to seminar) (10 points)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+        const Text('• Supporting Documents: Disbursement Vouchers, Acknowledgment Receipt, Certificate of Appearance/Proof of Activity Conducted', style: TextStyle(fontSize: 8.5, fontStyle: FontStyle.italic)),
+        const SizedBox(height: 12),
         _buildMappingTable([
-          ['20,001 and above', '10.0'], ['15,001 - 20,000', '8.0'],
-          ['10,001 - 15,000', '6.0'], ['5,001 - 10,000', '4.0'],
-          ['Below 5,000', '2.0'],
-        ], scoreKey: 'viii'),
+          ['5,000 and below', '1.0'],
+          ['5,001 – 10,000', '2.0'],
+          ['10,001 – 15,000', '3.0'],
+        ]),
       ],
     );
   }
 
   Widget _buildPage4Content() {
+    final isCampus = _selectedOrgType == 'Campus Student Council';
+
+    if (isCampus) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildMappingTable([
+            ['80,001 – 85,000', '9.0'],
+            ['85,001 – 90,000', '9.5'],
+            ['90,001 – 95,000', '10.0'],
+          ], headerLabel: 'Amount', scoreKey: 'viii'),
+          const SizedBox(height: 24),
+          const Text('IX. Financial Assistance given to members (subsidy to activities and to seminar) (10 points) _______________________', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+          const SizedBox(height: 4),
+          const Text('Supporting Documents: Disbursement Vouchers, Acknowledgment Receipt, Certificate of Appearance/Proof of Activity Conducted', style: TextStyle(fontSize: 8.5, fontStyle: FontStyle.italic)),
+          const SizedBox(height: 12),
+          _buildMappingTable([
+            ['4,001 – 5,000', '1.0'], ['5,001 – 10,000', '1.5'],
+            ['10,001 – 15,000', '2.0'], ['15,001 – 20,000', '2.5'],
+            ['20,001 – 25,000', '3.0'], ['25,001 – 30,000', '3.5'],
+            ['30,001 – 35,000', '4.0'], ['35,001 – 40,000', '4.5'],
+            ['40,001 – 45,000', '5.0'], ['45,001 – 50,000', '5.5'],
+            ['50,001 – 55,000', '6.0'], ['55,001 – 60,000', '6.5'],
+            ['60,001 – 65,000', '7.0'], ['65,001 – 70,000', '7.5'],
+            ['70,001 – 75,000', '8.0'], ['75,001 – 80,000', '8.5'],
+            ['80,001 – 85,000', '9.0'], ['85,001 – 90,000', '9.5'],
+            ['90,001 – 95,000', '10.0'],
+          ], scoreKey: 'ix'),
+          const SizedBox(height: 24),
+          const Text('X. Percentage of Implementation of the Approved Action Plan (10 points) _______________________', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+          const SizedBox(height: 4),
+          const Text('Supporting Documents: Approved letter, Project Proposal/Concept Paper, Disbursement Voucher, Project Income Statement, receipts and photo Documentation', style: TextStyle(fontSize: 8.5, fontStyle: FontStyle.italic)),
+          const SizedBox(height: 12),
+          _buildPercentageTable([
+            ['94%-100%', '10'],
+            ['88%-93%', '9'],
+            ['82%-87%', '8'],
+            ['76%-81%', '7'],
+            ['70%-75%', '6'],
+          ]),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('IX. Financial Assistance (10 pts)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-        const SizedBox(height: 15),
         _buildMappingTable([
-          ['10,001 and above', '10.0'], ['7,501 - 10,000', '8.0'],
-          ['5,001 - 7,500', '6.0'], ['2,501 - 5,000', '4.0'],
-          ['Below 2,500', '2.0'],
+          ['15,001 – 20,000', '4.0'], ['20,001 – 25,000', '5.0'],
+          ['25,001 – 30,000', '6.0'], ['30,001 – 35,000', '7.0'],
+          ['35,001 – 40,000', '8.0'], ['40,001 – 45,000', '9.0'],
+          ['45,001 – above', '10.0'],
         ], scoreKey: 'ix'),
-        const SizedBox(height: 40),
-        const Text('X. Action Plan Implementation (10 pts)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-        const SizedBox(height: 15),
+        const SizedBox(height: 24),
+        const Text('X. Percentage of Implementation of the Approved Action Plan (10 points)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+        const Text('• Supporting Documents: Approved letter, Project Proposal/Concept Paper, Disbursement Voucher, Project Income Statement, receipts and photo Documentation', style: TextStyle(fontSize: 8.5, fontStyle: FontStyle.italic)),
+        const SizedBox(height: 12),
         _buildMappingTable([
-          ['94% - 100%', '10.0'], ['84% - 93%', '8.0'],
-          ['74% - 83%', '6.0'], ['64% - 73%', '4.0'],
-          ['Below 64%', '2.0'],
-        ], scoreKey: 'x'),
-        const SizedBox(height: 50),
-        const Center(child: Text('FINAL SCORE SUMMARY', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 2))),
-        const SizedBox(height: 25),
+          ['94% - 100%', '10.0'], ['88% - 93%', '9.0'],
+          ['82% - 87%', '8.0'], ['76% - 81%', '7.0'],
+          ['70% - 75%', '6.0'], ['64% - 69%', '5.0'],
+          ['58% - 63%', '4.0'], ['52% - 57%', '3.0'],
+          ['46% - 51%', '2.0'], ['40% - 45%', '1.0'],
+        ], headerLabel: 'Percentage of Implementation', scoreKey: 'x'),
+        const SizedBox(height: 32),
         _buildFinalSummaryTable(),
-        const SizedBox(height: 40),
+        const SizedBox(height: 24),
         _buildGrandTotalRow(),
       ],
     );
@@ -2119,29 +3543,29 @@ class _AddScoresViewState extends State<_AddScoresView> {
 
   Widget _buildFinalSummaryTable() {
     return Table(
-      border: TableBorder.all(color: Colors.black, width: 2),
+      border: TableBorder.all(color: Colors.black, width: 1.5),
       columnWidths: const {0: FlexColumnWidth(4), 1: FixedColumnWidth(100)},
       children: [
         TableRow(
           decoration: BoxDecoration(color: Colors.grey.shade300),
           children: [
-            const Padding(padding: EdgeInsets.all(12), child: Text('SUB-CATEGORIES', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1))),
-            const Center(child: Padding(padding: EdgeInsets.all(12), child: Text('SCORE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)))),
+            const Padding(padding: EdgeInsets.all(8), child: Text('Sub Categories', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5))),
+            const Center(child: Padding(padding: EdgeInsets.all(8), child: Text('Score', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)))),
           ],
         ),
         ...[
-          ['I. Symposium/ Seminars Conducted', 'i'],
-          ['II. Convocations/ Programs and Literary Activities', 'ii'],
-          ['III. Religious Activities', 'iii'],
-          ['IV. Socio-Cultural and Sports Activities', 'iv'],
-          ['V. Maka-kalikasan/ Clean and Green Activities', 'v'],
-          ['VI. Extension Services Sponsored/ Conducted', 'vi'],
-          ['VII. Tangible/ Physical Projects', 'vii'],
-          ['VIII. Fund Drive/ IGP', 'viii'],
-          ['IX. Financial Assistance', 'ix'],
-          ['X. Action Plan Implementation', 'x'],
+          ['I. Symposium/ Seminars Conducted (10 points)', 'i'],
+          ['II. Convocations/Programs and Literary Activities (10 points)', 'ii'],
+          ['III. Religious Activities (5 points)', 'iii'],
+          ['IV. Socio-Cultural & Sports Activities (10 points)', 'iv'],
+          ['V. Maka-kalikasan/Clean and Green Activities and Projects (10 points)', 'v'],
+          ['VI. Extension Services Sponsored/Conducted (10 points)', 'vi'],
+          ['VII. Tangible/ Physical Projects (15 points)', 'vii'],
+          ['VIII. Fund Drive/ IGP (10 points)', 'viii'],
+          ['IX. Financial Assistance given to members (10 points)', 'ix'],
+          ['X. Percentage of Implementation of the Approved Action Plan (10 points)', 'x'],
         ].map((s) => TableRow(children: [
-          Padding(padding: const EdgeInsets.all(12), child: Text(s[0], style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500))),
+          Padding(padding: const EdgeInsets.all(8), child: Text(s[0], style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600))),
           TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: _buildIntegratedInput(s[1])),
         ])),
       ],
@@ -2152,11 +3576,11 @@ class _AddScoresViewState extends State<_AddScoresView> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        const Text('Grand Total Score Achieved:', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-        const SizedBox(width: 20),
+        const Text('Grand Total:', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+        const SizedBox(width: 16),
         Container(
-          width: 150,
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          width: 130,
+          padding: const EdgeInsets.symmetric(vertical: 6),
           decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.black, width: 2))),
           child: Center(child: Text(grandTotal.toStringAsFixed(2), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xFF6366F1)))),
         ),
@@ -2164,17 +3588,74 @@ class _AddScoresViewState extends State<_AddScoresView> {
     );
   }
 
+  Widget _buildPercentageTable(List<List<String>> rows, {String? scoreKey, String headerLabel = 'Percentage of Implementation'}) {
+    return Table(
+      border: TableBorder.all(color: Colors.black, width: 0.5),
+      columnWidths: const {0: FlexColumnWidth(3), 1: FixedColumnWidth(100)},
+      children: [
+        TableRow(
+          decoration: BoxDecoration(color: Colors.grey.shade200),
+          children: [
+            Center(child: Padding(padding: const EdgeInsets.all(6), child: Text(headerLabel, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)))),
+            const Center(child: Padding(padding: EdgeInsets.all(6), child: Text('Points', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)))),
+          ],
+        ),
+        ...rows.map((r) => TableRow(children: [
+          Center(child: Padding(padding: const EdgeInsets.all(4), child: Text(r[0], style: const TextStyle(fontSize: 10)))),
+          Center(child: Padding(padding: const EdgeInsets.all(4), child: Text(r[1], style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)))),
+        ])),
+        if (scoreKey != null)
+          TableRow(
+            decoration: BoxDecoration(color: Colors.blue.shade50),
+            children: [
+              const Padding(padding: EdgeInsets.all(8), child: Text('Actual Score achieved based on rubric:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+              TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: _buildIntegratedInput(scoreKey)),
+            ],
+          ),
+      ],
+    );
+  }
+
   Widget _buildPage5Content() {
+    final isCampus = _selectedOrgType == 'Campus Student Council';
+
+    if (isCampus) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildPercentageTable([
+            ['64%-69%', '5'],
+            ['58%-63%', '4'],
+            ['52%-57%', '3'],
+            ['46%-51%', '2'],
+            ['40%-45%', '1'],
+          ], scoreKey: 'x'),
+          const SizedBox(height: 24),
+          _buildFinalSummaryTable(),
+          const SizedBox(height: 20),
+          _buildGrandTotalRow(),
+          const SizedBox(height: 32),
+          const Text('Certified True and Correct:', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 50),
+          _buildSignatureGrid(),
+          const SizedBox(height: 50),
+          const Text('Noted:', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 30),
+          _buildNotedBlock(),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const SizedBox(height: 40),
+        const Text('Certified True and Correct:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
         const SizedBox(height: 60),
-        const Text('Certified True and Correct:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 80),
         _buildSignatureGrid(),
-        const SizedBox(height: 120),
-        const Text('Noted:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         const SizedBox(height: 80),
+        const Text('Noted:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 40),
         _buildNotedBlock(),
       ],
     );
@@ -2185,17 +3666,17 @@ class _AddScoresViewState extends State<_AddScoresView> {
       children: [
         Row(
           children: [
-            SizedBox(width: 330, child: _buildSignatureLine()),
-            const SizedBox(width: 60),
-            SizedBox(width: 330, child: _buildSignatureLine()),
+            Expanded(child: _buildSignatureLine()),
+            const SizedBox(width: 40),
+            Expanded(child: _buildSignatureLine()),
           ],
         ),
-        const SizedBox(height: 80),
+        const SizedBox(height: 60),
         Row(
           children: [
-            SizedBox(width: 330, child: _buildSignatureLine()),
-            const SizedBox(width: 60),
-            SizedBox(width: 330, child: _buildSignatureLine()),
+            Expanded(child: _buildSignatureLine()),
+            const SizedBox(width: 40),
+            Expanded(child: _buildSignatureLine()),
           ],
         ),
       ],
@@ -2203,38 +3684,38 @@ class _AddScoresViewState extends State<_AddScoresView> {
   }
 
   Widget _buildNotedBlock() {
-    return const Center(
-      child: Column(
-        children: [
-          Text('LORAINE SUYU-TATTAO, Ph.D.', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, decoration: TextDecoration.underline, letterSpacing: 0.5)),
-          Text('University Director', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-          Text('Office of the Student Development and Welfare', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: const [
+        Text('LORAINE SUYU-TATTAO, Ph.D.', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, decoration: TextDecoration.underline, letterSpacing: 0.5)),
+        SizedBox(height: 2),
+        Text('University Director', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+        Text('Office of the Student Services and Welfare', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+      ],
     );
   }
 
-  Widget _buildMappingTable(List<List<String>> rows, {String? scoreKey}) {
+  Widget _buildMappingTable(List<List<String>> rows, {String headerLabel = 'Amount', String? scoreKey}) {
     return Table(
-      border: TableBorder.all(color: Colors.black),
+      border: TableBorder.all(color: Colors.black, width: 0.5),
       columnWidths: const {0: FlexColumnWidth(3), 1: FixedColumnWidth(100)},
       children: [
         TableRow(
-          decoration: BoxDecoration(color: Colors.grey.shade100),
+          decoration: BoxDecoration(color: Colors.grey.shade200),
           children: [
-            const Center(child: Padding(padding: EdgeInsets.all(8), child: Text('Amount / Range / Percentage', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)))),
-            const Center(child: Padding(padding: EdgeInsets.all(8), child: Text('Points', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)))),
+            Center(child: Padding(padding: const EdgeInsets.all(6), child: Text(headerLabel, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)))),
+            const Center(child: Padding(padding: EdgeInsets.all(6), child: Text('Points', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)))),
           ],
         ),
         ...rows.map((r) => TableRow(children: [
-          Center(child: Padding(padding: const EdgeInsets.all(6), child: Text(r[0], style: const TextStyle(fontSize: 9)))),
-          Center(child: Padding(padding: const EdgeInsets.all(6), child: Text(r[1], style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)))),
+          Center(child: Padding(padding: const EdgeInsets.all(4), child: Text(r[0], style: const TextStyle(fontSize: 10)))),
+          Center(child: Padding(padding: const EdgeInsets.all(4), child: Text(r[1], style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)))),
         ])),
         if (scoreKey != null)
           TableRow(
             decoration: BoxDecoration(color: Colors.blue.shade50),
             children: [
-              const Padding(padding: EdgeInsets.all(10), child: Text('Actual Score achieved based on rubric:', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
+              const Padding(padding: EdgeInsets.all(8), child: Text('Actual Score achieved based on rubric:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
               TableCell(verticalAlignment: TableCellVerticalAlignment.middle, child: _buildIntegratedInput(scoreKey)),
             ],
           ),
@@ -2243,21 +3724,39 @@ class _AddScoresViewState extends State<_AddScoresView> {
   }
 
   Widget _buildIntegratedInput(String key) {
+    final isSpecialized = (_selectedOrgType ?? '').toLowerCase().contains('special');
+    final double maxScore = isSpecialized
+        ? (key == 'i' ? 20.0 : (key == 'ii' ? 30.0 : 10.0))
+        : ((key == 'vii') ? 15.0 : (key == 'iii' ? 5.0 : 10.0));
+
     return TextField(
       controller: _controllers[key],
       textAlign: TextAlign.center,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF6366F1)),
-      decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4)),
+      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
+      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF6366F1)),
+      decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 2)),
+      onChanged: (val) {
+        final pts = double.tryParse(val.trim());
+        if (pts != null && pts > maxScore) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _controllers[key]?.text = maxScore.toStringAsFixed(1);
+            if (mounted) setState(() {});
+          });
+          AppUtils.showTopToast(context, 'Maximum score for this category is ${maxScore.toStringAsFixed(1)} points.', isError: true);
+        } else {
+          if (mounted) setState(() {});
+        }
+      },
     );
   }
 
   Widget _buildSignatureLine() {
     return Column(
       children: [
-        Container(height: 1.5, color: Colors.black),
-        const SizedBox(height: 6),
-        const Text('Signature over Printed Name of Evaluator', style: TextStyle(fontSize: 9, fontStyle: FontStyle.italic, fontWeight: FontWeight.w600)),
+        Container(height: 1, color: Colors.black),
+        const SizedBox(height: 4),
+        const Text('Signature over Printed Name of Evaluator', style: TextStyle(fontSize: 8.5, fontStyle: FontStyle.italic, fontWeight: FontWeight.w600)),
       ],
     );
   }
@@ -2363,8 +3862,11 @@ class _RankingsViewState extends State<_RankingsView> {
                     itemBuilder: (context, index) {
                       final eval = _evaluations[index];
                       final orgName = eval['organizations']?['name'] ?? 'Unknown Org';
-                      final total = eval['grand_total'] ?? 0;
-                      final rating = eval['adjectival_rating'] ?? 'N/A';
+                      final total = (eval['grand_total'] as num?)?.toDouble() ?? 0.0;
+                      final rank = 1 + _evaluations.where((item) =>
+                          ((item['grand_total'] as num?)?.toDouble() ?? 0.0) > total).length;
+                      final rawRating = (eval['adjectival_rating'] ?? 'N/A').toString();
+                      final rating = rawRating.contains('|') ? rawRating.split('|').first : rawRating;
                       
                       return Container(
                         margin: const EdgeInsets.only(bottom: 16),
@@ -2376,8 +3878,8 @@ class _RankingsViewState extends State<_RankingsView> {
                               width: 48,
                               height: 48,
                               alignment: Alignment.center,
-                              decoration: BoxDecoration(color: index < 3 ? Colors.orange.withValues(alpha: 0.1) : const Color(0xFFF1F5F9), shape: BoxShape.circle),
-                              child: Text('${index + 1}', style: TextStyle(fontWeight: FontWeight.bold, color: index < 3 ? Colors.orange : const Color(0xFF64748B))),
+                              decoration: BoxDecoration(color: rank <= 3 ? Colors.orange.withValues(alpha: 0.1) : const Color(0xFFF1F5F9), shape: BoxShape.circle),
+                              child: Text('$rank', style: TextStyle(fontWeight: FontWeight.bold, color: rank <= 3 ? Colors.orange : const Color(0xFF64748B))),
                             ),
                             const SizedBox(width: 24),
                             Expanded(
@@ -2591,4 +4093,322 @@ class _ProfileView extends StatelessWidget {
   const _ProfileView();
   @override
   Widget build(BuildContext context) { return const Center(child: Text('Profile Settings coming soon.')); }
+}
+
+class _ArchivesView extends StatefulWidget {
+  final List<Map<String, dynamic>> activities;
+  final List<Map<String, dynamic>>? organizations;
+
+  const _ArchivesView({
+    required this.activities,
+    this.organizations,
+  });
+
+  @override
+  State<_ArchivesView> createState() => _ArchivesViewState();
+}
+
+class _ArchivesViewState extends State<_ArchivesView> {
+  String _searchQuery = '';
+  String _selectedCategory = 'All';
+  String _schoolYear = '2025-2026';
+  List<Map<String, dynamic>> _accomplishmentReports = [];
+  bool _isLoadingReports = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAccomplishmentReports();
+  }
+
+  Future<void> _fetchAccomplishmentReports() async {
+    try {
+      final res = await Supabase.instance.client
+          .from('accomplishment_reports')
+          .select('*, activities(*)');
+      if (mounted) {
+        setState(() {
+          _accomplishmentReports = List<Map<String, dynamic>>.from(res);
+          _isLoadingReports = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingReports = false);
+    }
+  }
+
+  void _openGPOADialog(List<Map<String, dynamic>> acts, String orgName, String? orgId) {
+    final org = widget.organizations?.firstWhere(
+      (o) => o['id'].toString() == orgId?.toString(),
+      orElse: () => {'id': orgId, 'name': orgName, 'type': 'College Student Council'},
+    ) ?? {'id': orgId, 'name': orgName, 'type': 'College Student Council'};
+
+    showDialog(
+      context: context,
+      builder: (ctx) => GPOAPreviewDialog(
+        organization: org,
+        activities: acts,
+        president: const {'full_name': 'Student Leader'},
+        adviser: const {'full_name': 'Faculty Adviser'},
+        fileName: 'GPOA_${orgName.replaceAll(" ", "_")}.pdf',
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const String orgNameFilter = '';
+    final archivedDocs = <Map<String, dynamic>>[];
+
+    // 1. Process GPOAs - EXACTLY 1 GPOA ENTRY PER ORGANIZATION
+    if (_selectedCategory == 'All' || _selectedCategory == 'GPOA') {
+      final Map<String, List<Map<String, dynamic>>> orgActsMap = {};
+      final Map<String, String> orgNamesMap = {};
+
+      for (var act in widget.activities) {
+        final orgId = act['organization_id']?.toString() ?? 'unknown';
+        final orgName = (act['organization_name'] ?? act['organization']?['name'] ?? 'Organization').toString();
+
+        orgNamesMap[orgId] = orgName;
+        orgActsMap.putIfAbsent(orgId, () => []).add(act);
+      }
+
+      orgActsMap.forEach((orgId, acts) {
+        final orgName = orgNamesMap[orgId] ?? 'Organization';
+
+        final query = _searchQuery.toLowerCase();
+        if (query.isNotEmpty && !orgName.toLowerCase().contains(query)) {
+          return;
+        }
+
+        archivedDocs.add({
+          'type': 'GPOA',
+          'title': 'Approved Annual GPOA - $orgName',
+          'org_name': orgName,
+          'date': 'SY $_schoolYear',
+          'color': const Color(0xFF4F46E5),
+          'icon': Icons.description_rounded,
+          'acts': acts,
+          'org_id': orgId,
+          'is_gpoa': true,
+        });
+      });
+    }
+
+    // 2. Process Approved Event Letters
+    for (var act in widget.activities) {
+      final actTitle = (act['title'] ?? 'Untitled Activity').toString();
+      final orgName = (act['organization_name'] ?? act['organization']?['name'] ?? 'Organization').toString();
+
+      final query = _searchQuery.toLowerCase();
+      if (query.isNotEmpty && !actTitle.toLowerCase().contains(query) && !orgName.toLowerCase().contains(query)) {
+        continue;
+      }
+
+      if (act['letter_url'] != null && act['letter_url'].toString().isNotEmpty) {
+        if (_selectedCategory == 'All' || _selectedCategory == 'GPOA') {
+          archivedDocs.add({
+            'type': 'Approved Letter',
+            'title': 'Approved Event Letter - $actTitle',
+            'org_name': orgName,
+            'date': act['proposed_date']?.toString().split('T').first ?? 'SY $_schoolYear',
+            'color': const Color(0xFF0284C7),
+            'icon': Icons.mark_as_unread_rounded,
+            'file_url': act['letter_url'],
+            'act': act,
+            'is_gpoa': false,
+          });
+        }
+      }
+    }
+
+    // 2. Process Accomplishment Reports from Supabase
+    for (var rep in _accomplishmentReports) {
+      final act = rep['activities'] ?? {};
+      final actTitle = (act['title'] ?? rep['title'] ?? 'Activity Report').toString();
+      final orgName = (rep['organization_name'] ?? act['organization_name'] ?? 'Organization').toString();
+
+      if (orgNameFilter.isNotEmpty && !orgName.toLowerCase().contains(orgNameFilter)) {
+        continue;
+      }
+
+      final query = _searchQuery.toLowerCase();
+      if (query.isNotEmpty && !actTitle.toLowerCase().contains(query) && !orgName.toLowerCase().contains(query)) {
+        continue;
+      }
+
+      final rawUrls = rep['file_urls'] ?? rep['report_url'] ?? rep['attachment_url'];
+      String? fileUrl;
+      if (rawUrls is List && rawUrls.isNotEmpty) {
+        fileUrl = rawUrls.first.toString();
+      } else if (rawUrls is String && rawUrls.isNotEmpty) {
+        fileUrl = rawUrls;
+      }
+
+      if (_selectedCategory == 'All' || _selectedCategory == 'Accomplishment') {
+        archivedDocs.add({
+          'type': 'Accomplishment Report',
+          'title': 'Accomplishment Report - $actTitle',
+          'org_name': orgName,
+          'date': rep['created_at']?.toString().split('T').first ?? 'SY $_schoolYear',
+          'color': const Color(0xFF0D9488),
+          'icon': Icons.assignment_turned_in_rounded,
+          'file_url': fileUrl,
+          'act': act,
+          'is_gpoa': false,
+        });
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(36),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: const Color(0xFF6366F1).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(16)),
+                    child: const Icon(Icons.folder_special_rounded, color: Color(0xFF6366F1), size: 28),
+                  ),
+                  const SizedBox(width: 16),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Digital Archives', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                      Text('Centralized repository of GPOAs, Accomplishment Reports, and Financial Proofs', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+                    ],
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade300)),
+                child: DropdownButton<String>(
+                  value: _schoolYear,
+                  underline: const SizedBox(),
+                  items: ['2024-2025', '2025-2026', '2026-2027'].map((sy) => DropdownMenuItem(value: sy, child: Text('SY $sy'))).toList(),
+                  onChanged: (val) {
+                    if (val != null) setState(() => _schoolYear = val);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  onChanged: (v) => setState(() => _searchQuery = v),
+                  decoration: InputDecoration(
+                    hintText: 'Search by document title, activity, or organization…',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Wrap(
+                spacing: 8,
+                children: ['All', 'GPOA', 'Accomplishment', 'Financial'].map((cat) {
+                  final isSel = _selectedCategory == cat;
+                  return ChoiceChip(
+                    label: Text(cat),
+                    selected: isSel,
+                    onSelected: (s) {
+                      if (s) setState(() => _selectedCategory = cat);
+                    },
+                    selectedColor: const Color(0xFF6366F1),
+                    labelStyle: TextStyle(color: isSel ? Colors.white : const Color(0xFF475569), fontWeight: FontWeight.bold),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+          Expanded(
+            child: _isLoadingReports
+                ? const Center(child: CircularProgressIndicator())
+                : archivedDocs.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(Icons.inventory_2_outlined, size: 48, color: Color(0xFF94A3B8)),
+                            SizedBox(height: 12),
+                            Text('No archived documents match your criteria.', style: TextStyle(fontSize: 14, color: Color(0xFF64748B))),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: archivedDocs.length,
+                        itemBuilder: (ctx, idx) {
+                          final doc = archivedDocs[idx];
+                          final Color col = doc['color'];
+                          final IconData icon = doc['icon'];
+                          final isGPOA = doc['is_gpoa'] == true;
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.grey.shade200),
+                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))],
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(color: col.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+                                  child: Icon(icon, color: col, size: 24),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(doc['title'].toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1E293B))),
+                                      const SizedBox(height: 4),
+                                      Text('${doc['org_name']} • ${doc['date']}', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                                    ],
+                                  ),
+                                ),
+                                ElevatedButton.icon(
+                                  onPressed: () {
+                                    if (isGPOA && doc['acts'] != null) {
+                                      final actsList = List<Map<String, dynamic>>.from(doc['acts'] as List);
+                                      _openGPOADialog(actsList, doc['org_name'].toString(), doc['org_id']?.toString());
+                                    } else if (doc['file_url'] != null && doc['file_url'].toString().isNotEmpty) {
+                                      AppUtils.showTopToast(context, 'Opening document URL: ${doc['file_url']}');
+                                    } else {
+                                      AppUtils.showTopToast(context, 'Viewing ${doc['title']}...');
+                                    }
+                                  },
+                                  icon: Icon(isGPOA ? Icons.picture_as_pdf_rounded : Icons.remove_red_eye_rounded, size: 16),
+                                  label: Text(isGPOA ? 'View GPOA' : 'View File'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: col,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
 }

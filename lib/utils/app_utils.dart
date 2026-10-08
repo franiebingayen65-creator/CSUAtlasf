@@ -12,12 +12,9 @@ class AppUtils {
       final month = months[date.month - 1];
       final day = date.day.toString().padLeft(2, '0');
       final year = date.year;
-      int hour = date.hour;
-      final amPm = hour >= 12 ? 'PM' : 'AM';
-      hour = hour % 12;
-      if (hour == 0) hour = 12;
+      final hour = date.hour.toString().padLeft(2, '0');
       final minute = date.minute.toString().padLeft(2, '0');
-      return '$month $day, $year - $hour:$minute $amPm';
+      return '$month $day, $year - $hour:$minute';
     } catch (_) {
       return dateStr.toString();
     }
@@ -70,15 +67,50 @@ class AppUtils {
     if (timeFrame == null || timeFrame.toString().isEmpty) {
       return const Duration(hours: 4);
     }
-    final str = timeFrame.toString().toLowerCase();
+    final str = timeFrame.toString().toUpperCase();
+    
+    // Check for time range like "08:00 AM - 10:00 AM"
+    final rangeRegex = RegExp(r'(\d{1,2}:\d{2}\s?[AP]M)\s?-\s?(\d{1,2}:\d{2}\s?[AP]M)');
+    final rangeMatch = rangeRegex.firstMatch(str);
+    if (rangeMatch != null) {
+      try {
+        final startStr = rangeMatch.group(1)!;
+        final endStr = rangeMatch.group(2)!;
+        
+        final start = _parseTimeOfDay(startStr);
+        final end = _parseTimeOfDay(endStr);
+        
+        int startMinutes = start.hour * 60 + start.minute;
+        int endMinutes = end.hour * 60 + end.minute;
+        
+        if (endMinutes < startMinutes) {
+          endMinutes += 24 * 60; // Next day
+        }
+        
+        return Duration(minutes: endMinutes - startMinutes);
+      } catch (_) {}
+    }
+
     final numberRegex = RegExp(r'(\d*\.?\d+)');
-    final match = numberRegex.firstMatch(str);
+    final match = numberRegex.firstMatch(str.toLowerCase());
     if (match != null) {
       final value = double.tryParse(match.group(1)!) ?? 4.0;
-      if (str.contains('min')) return Duration(minutes: value.toInt());
-      if (str.contains('day')) return Duration(minutes: (value * 24 * 60).toInt());
+      if (str.toLowerCase().contains('min')) return Duration(minutes: value.toInt());
+      if (str.toLowerCase().contains('day')) return Duration(minutes: (value * 24 * 60).toInt());
       return Duration(minutes: (value * 60).toInt());
     }
     return const Duration(hours: 4);
+  }
+
+  static TimeOfDay _parseTimeOfDay(String timeStr) {
+    final parts = timeStr.split(RegExp(r'[:\s]'));
+    int hour = int.parse(parts[0]);
+    int minute = int.parse(parts[1]);
+    final amPm = parts.last.toUpperCase();
+    
+    if (amPm == 'PM' && hour != 12) hour += 12;
+    if (amPm == 'AM' && hour == 12) hour = 0;
+    
+    return TimeOfDay(hour: hour, minute: minute);
   }
 }

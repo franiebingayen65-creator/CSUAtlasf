@@ -98,7 +98,9 @@ class GPOAActivityDetailsView extends StatelessWidget {
                       color: const Color(0xFF6366F1),
                     )
                   else
-                    Row(
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
                       children: [
                         _ActionButton(
                           onPressed: () => onStatusUpdate!(status == 'Endorsed' ? 'Approved' : 'Endorsed'),
@@ -106,7 +108,6 @@ class GPOAActivityDetailsView extends StatelessWidget {
                           label: status == 'Endorsed' ? 'Approve GPOA' : 'Endorse Proposal',
                           color: const Color(0xFF10B981),
                         ),
-                        const SizedBox(width: 12),
                         _ActionButton(
                           onPressed: () => onStatusUpdate!('Needs Revision'),
                           icon: Icons.history_edu_rounded,
@@ -114,7 +115,6 @@ class GPOAActivityDetailsView extends StatelessWidget {
                           color: const Color(0xFFF59E0B),
                           isOutlined: true,
                         ),
-                        const SizedBox(width: 12),
                         _ActionButton(
                           onPressed: () => onStatusUpdate!('Rejected'),
                           icon: Icons.cancel_rounded,

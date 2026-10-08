@@ -153,8 +153,8 @@ class _LoginPageState extends State<LoginPage> {
             ),
             Center(
               child: Container(
-                width: 1000,
-                height: 600,
+                constraints: const BoxConstraints(maxWidth: 1000, maxHeight: 600),
+                width: double.infinity,
                 margin: const EdgeInsets.symmetric(horizontal: 24),
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
@@ -166,7 +166,7 @@ class _LoginPageState extends State<LoginPage> {
                   children: [
                     Expanded(
                       flex: 1,
-                      child: Padding(
+                      child: SingleChildScrollView(
                         padding: const EdgeInsets.all(60.0),
                         child: Form(
                           key: _formKey,
