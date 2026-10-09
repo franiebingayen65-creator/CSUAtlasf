@@ -256,6 +256,9 @@ class _NotificationInboxButtonState extends State<NotificationInboxButton> {
           final id = item['id']?.toString();
           if (id != null && _dismissedIds.contains(id)) return false;
 
+          final status = (item['status'] ?? '').toString().toLowerCase();
+          if (status == 'archived' || status == 'deleted') return false;
+
           final rId = item['recipient_id']?.toString();
           final rRole = (item['recipient_role'] ?? '').toString().toLowerCase();
           if (rId == userId) return true;
@@ -487,6 +490,7 @@ class _NotificationInboxButtonState extends State<NotificationInboxButton> {
 
                                     if (id != null) await _saveDismissedId(id);
                                     try {
+                                      await client.from('notifications').update({'status': 'Archived', 'read_at': DateTime.now().toUtc().toIso8601String()}).eq('id', item['id']);
                                       await client.from('notifications').delete().eq('id', item['id']);
                                     } catch (_) {}
                                     setModalState(() {

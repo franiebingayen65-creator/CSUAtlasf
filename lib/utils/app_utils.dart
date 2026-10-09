@@ -113,4 +113,37 @@ class AppUtils {
     
     return TimeOfDay(hour: hour, minute: minute);
   }
+
+  static String formatTimeFrame(dynamic timeFrame) {
+    if (timeFrame == null || timeFrame.toString().trim().isEmpty) {
+      return '2 Hours';
+    }
+    final raw = timeFrame.toString().trim();
+    final lower = raw.toLowerCase();
+
+    final numberRegex = RegExp(r'(\d*\.?\d+)');
+    final match = numberRegex.firstMatch(raw);
+
+    if (match != null) {
+      final valStr = match.group(1)!;
+      final val = double.tryParse(valStr) ?? 1.0;
+      final intVal = val.toInt();
+
+      if (lower.contains('day')) {
+        return intVal == 1 ? '1 Day' : '$intVal Days';
+      }
+      if (lower.contains('hour') || lower.contains('hr')) {
+        return intVal == 1 ? '1 Hour' : '$intVal Hours';
+      }
+
+      if (val >= 24) {
+        final days = (val / 24).round();
+        return days == 1 ? '1 Day' : '$days Days';
+      } else {
+        return intVal == 1 ? '1 Hour' : '$intVal Hours';
+      }
+    }
+
+    return raw;
+  }
 }
