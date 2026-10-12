@@ -241,7 +241,6 @@ class _NotificationInboxButtonState extends State<NotificationInboxButton> {
   Widget build(BuildContext context) {
     final client = Supabase.instance.client;
     final userId = client.auth.currentUser?.id;
-    if (userId == null) return const SizedBox.shrink();
 
     final stream = client
         .from('notifications')
@@ -261,7 +260,7 @@ class _NotificationInboxButtonState extends State<NotificationInboxButton> {
 
           final rId = item['recipient_id']?.toString();
           final rRole = (item['recipient_role'] ?? '').toString().toLowerCase();
-          if (rId == userId) return true;
+          if (userId != null && rId == userId) return true;
           if (rId == null || rId.isEmpty) return true;
           if (rRole == 'all' || rRole == 'admin' || rRole == 'president' || rRole == 'adviser') return true;
           return false;

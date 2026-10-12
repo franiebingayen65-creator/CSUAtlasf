@@ -7,9 +7,11 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:csuatlasf/utils/app_utils.dart';
+import 'package:csuatlasf/utils/storage_utils.dart';
 import 'package:csuatlasf/widgets/common_ui.dart';
 import 'package:csuatlasf/widgets/gpoa_details.dart';
 import 'package:csuatlasf/widgets/pdf_preview_dialog.dart';
+
 
 class OrgDashboard extends StatefulWidget {
   const OrgDashboard({super.key});
@@ -45,85 +47,45 @@ class _OrgDashboardState extends State<OrgDashboard> {
       final user = _supabase.auth.currentUser;
       if (user == null) return;
 
-      final profileData = await _supabase
+      final profile = await _supabase
           .from('profiles')
-          .select('*, organizations(*)')
-          .eq('id', user.id);
+          .select('id, full_name, email, role, organization_id, organizations(*)')
+          .eq('id', user.id)
+          .maybeSingle();
+      if (profile == null) return;
 
-      if (profileData.isEmpty) {
-        if (mounted) setState(() { _orgData = null; _isLoading = false; });
-        return;
-      }
+      final org = profile['organizations'];
+      if (org is! Map) return;
+      _userRole = profile['role']?.toString();
+      _orgData = Map<String, dynamic>.from(org);
+      final orgId = _orgData!['id'].toString();
 
-      final profile = profileData.first;
-      _orgData = profile['organizations'];
-      _userRole = profile['role'];
-
-      if (_orgData != null) {
-        final profilesData = await _supabase.from('profiles').select().eq('organization_id', _orgData!['id']);
-        _orgProfiles = List<Map<String, dynamic>>.from(profilesData);
-
-        final activitiesData = await _supabase
-            .from('activities')
-            .select()
-            .eq('organization_id', _orgData!['id']) as List;
-        
-        final now = DateTime.now();
-        for (var item in activitiesData) {
-          if (item['status'] == 'Scheduled' && item['proposed_date'] != null) {
-            try {
-              final eventDate = DateTime.parse(item['proposed_date'].toString()).toLocal();
-              final duration = AppUtils.parseDuration(item['time_frame']);
-              if (eventDate.add(duration).isBefore(now)) {
-                await _supabase.from('activities').update({'status': 'Completed'}).eq('id', item['id']);
-                item['status'] = 'Completed';
-              }
-            } catch (_) {}
-          }
-        }
-
-        if (mounted) {
-          setState(() {
-            _myActivities = List<Map<String, dynamic>>.from(activitiesData);
-            _isLoading = false;
-          });
-        }
-
-        _activitySubscription?.cancel();
-        _activitySubscription = _supabase
-            .from('activities')
-            .stream(primaryKey: ['id'])
-            .eq('organization_id', _orgData!['id'])
-            .listen((data) {
-              if (mounted) {
-                setState(() { _myActivities = List<Map<String, dynamic>>.from(data); });
-                _handleAutoCompletion();
-              }
-            });
-      } else {
-        if (mounted) setState(() => _isLoading = false);
-      }
-    } catch (e) {
+      final results = await Future.wait([
+        _supabase.from('profiles').select('id, full_name, email, role, organization_id').eq('organization_id', orgId),
+        _supabase.from('activities').select().eq('organization_id', orgId),
+      ]);
       if (!mounted) return;
-      AppUtils.showTopToast(context, 'Error: $e', isError: true);
-      setState(() => _isLoading = false);
+      setState(() {
+        _orgProfiles = List<Map<String, dynamic>>.from(results[0] as List);
+        _myActivities = List<Map<String, dynamic>>.from(results[1] as List);
+      });
+
+      _activitySubscription?.cancel();
+      _activitySubscription = _supabase
+          .from('activities')
+          .stream(primaryKey: ['id'])
+          .eq('organization_id', orgId)
+          .listen((data) {
+        if (mounted) setState(() => _myActivities = List<Map<String, dynamic>>.from(data));
+      });
+    } catch (e) {
+      debugPrint('Org data load failed: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _handleAutoCompletion() {
-    final now = DateTime.now();
-    for (var item in _myActivities) {
-      if (item['status'] == 'Scheduled' && item['proposed_date'] != null) {
-        try {
-          final eventDate = DateTime.parse(item['proposed_date'].toString()).toLocal();
-          final duration = AppUtils.parseDuration(item['time_frame']);
-          if (eventDate.add(duration).isBefore(now)) {
-            _supabase.from('activities').update({'status': 'Completed'}).eq('id', item['id']).then((_) {});
-          }
-        } catch (_) {}
-      }
-    }
-  }
+
 
   void _onPageSelected(String page) {
     setState(() { _activePage = page; });
@@ -214,10 +176,9 @@ class _OrgDashboardState extends State<OrgDashboard> {
         return _OrgDashboardContent(orgData: _orgData!, activities: _myActivities, userRole: _userRole ?? 'President', onRefresh: _fetchOrgData);
       case 'GPOA Submission':
         return _GPOASubmissionView(orgId: _orgData!['id'], orgType: _orgData!['type']?.toString(), onBack: () => setState(() => _activePage = 'Manage GPOA'));
+      case 'GPOA Review':
       case 'Manage GPOA':
         return _GPOAStatusGridView(activities: _myActivities, onAction: (page) => setState(() => _activePage = page), userRole: _userRole ?? 'President', onRefresh: _fetchOrgData);
-      case 'GPOA Review':
-        return _GPOAReviewView(activities: _myActivities, onRefresh: _fetchOrgData);
       case 'Manage Events':
       case 'View Events':
       case 'Scheduling & Letters':
@@ -319,18 +280,10 @@ class _OrgSidebar extends StatelessWidget {
                   _SidebarItem(
                     icon: Icons.grid_view_rounded,
                     title: 'Manage GPOA',
-                    isSelected: ['Manage GPOA', 'GPOA Submission', 'GPOA Report'].contains(activePage),
+                    isSelected: ['Manage GPOA', 'GPOA Submission', 'GPOA Review', 'GPOA Report'].contains(activePage),
                     isCollapsed: isCollapsed,
                     onTap: () => onPageSelected('Manage GPOA'),
                   ),
-                  if (isAdviser)
-                    _SidebarItem(
-                      icon: Icons.rate_review_rounded,
-                      title: 'GPOA Review',
-                      isSelected: activePage == 'GPOA Review',
-                      isCollapsed: isCollapsed,
-                      onTap: () => onPageSelected('GPOA Review'),
-                    ),
                   if (!isCollapsed) const _SidebarHeader(title: 'EVENT TRACKING'),
                   _SidebarItem(
                     icon: Icons.calendar_month_rounded,
@@ -654,17 +607,7 @@ class _OrgDashboardContent extends StatelessWidget {
               status: activity['status'] ?? 'Pending',
               createdAt: AppUtils.formatDateTime(activity['created_at']),
               proposedDate: activity['proposed_date'] != null ? AppUtils.formatDateTime(activity['proposed_date']) : null,
-              onStatusUpdate: activity['status'] == 'Needs Revision' ? (s) async {
-                try {
-                  await Supabase.instance.client.from('activities').update({'status': 'Pending'}).eq('id', activity['id']);
-                  if (!context.mounted) return;
-                  AppUtils.showTopToast(context, 'Activity resubmitted for review.');
-                  onRefresh();
-                  Navigator.pop(context);
-                } catch (e) {
-                  if (context.mounted) AppUtils.showTopToast(context, 'Error: $e', isError: true);
-                }
-              } : null,
+
             ),
           ),
         ),
@@ -1263,9 +1206,9 @@ class _OrgManageEventsView extends StatelessWidget {
                 indicator: BoxDecoration(borderRadius: BorderRadius.circular(12), color: const Color(0xFF6366F1)),
                 dividerColor: Colors.transparent,
                 tabs: [
-                  Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.calendar_month_rounded, size: 18), const SizedBox(width: 8), Text('Event Scheduling (${schedulingList.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
+                  Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.calendar_month_rounded, size: 18), const SizedBox(width: 8), Text('Schedule & Letter (${schedulingList.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
                   Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.history_edu_rounded, size: 18), const SizedBox(width: 8), Text('Activity Corrections (${revisionList.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
-                  Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.mark_email_read_rounded, size: 18), const SizedBox(width: 8), Text('Request Letters (${letterList.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
+                  Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.mark_email_read_rounded, size: 18), const SizedBox(width: 8), Text('Approved Events (${letterList.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
                 ],
               ),
             ),
@@ -1291,13 +1234,13 @@ class _OrgManageEventsView extends StatelessWidget {
     IconData emptyIcon = Icons.inbox_rounded;
 
     if (tabType == 'scheduling') {
-      emptyText = 'No activities ready for scheduling.';
+      emptyText = 'No approved GPOA activities waiting for a date and letter.';
       emptyIcon = Icons.calendar_today_outlined;
     } else if (tabType == 'corrections') {
       emptyText = 'No activities needing correction.';
       emptyIcon = Icons.edit_notifications_outlined;
     } else if (tabType == 'letters') {
-      emptyText = 'No activities ready for request letters.';
+      emptyText = 'No scheduled events yet.';
       emptyIcon = Icons.mail_outline_rounded;
     }
 
@@ -1343,6 +1286,10 @@ class _OrgManageEventsView extends StatelessWidget {
                       Row(children: [const Text('Current Status: ', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))), StatusBadge(status: status)]),
                       const SizedBox(height: 4),
                       Text(hasDate ? 'Scheduled Date: ${AppUtils.formatDateTime(event['proposed_date'])}' : 'Date & Time: Not selected', style: TextStyle(color: hasDate ? const Color(0xFF0F172A) : Colors.red, fontSize: 13, fontWeight: hasDate ? FontWeight.w600 : FontWeight.bold)),
+                      if (status == 'Approved' && (event['remarks']?.toString().trim().isNotEmpty ?? false)) ...[
+                        const SizedBox(height: 6),
+                        Text('Date rejected: ${event['remarks']}', style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626), fontWeight: FontWeight.bold)),
+                      ],
                     ],
                   ),
                 ),
@@ -1359,63 +1306,83 @@ class _OrgManageEventsView extends StatelessWidget {
 
   Widget _buildAction(BuildContext context, Map<String, dynamic> event, VoidCallback onRefresh) {
     final status = event['status'];
-    if (['Approved', 'Awaiting Date Approval', 'Needs Revision'].contains(status)) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (status == 'Needs Revision')
-            ElevatedButton.icon(
-              onPressed: () => _handleRevision(context, event, onRefresh), 
-              icon: const Icon(Icons.edit_calendar_rounded, size: 16), 
-              label: const Text('Revise Schedule'), 
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white, elevation: 0),
-            )
-          else ...[
-            IconButton(
-              onPressed: () => _selectDate(context, event, onRefresh), 
-              icon: const Icon(Icons.edit_calendar_rounded, color: Color(0xFF6366F1)),
-              tooltip: 'Pick Date',
-            ),
-            if (status == 'Approved')
-              ElevatedButton.icon(
-                onPressed: () async {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Confirm Submission'),
-                      content: const Text('Are you sure you want to submit this event for date approval?'),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                        ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1)), child: const Text('Submit')),
-                      ],
-                    ),
-                  );
-                  if (confirm == true) {
-                    if (context.mounted) {
-                      _requestDateApproval(context, event, onRefresh);
-                    }
-                  }
-                },
-                icon: const Icon(Icons.send_rounded, size: 16),
-                label: const Text('Submit'),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1), foregroundColor: Colors.white, elevation: 0),
-              )
-            else
-              Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)), child: const Text('Pending Approval', style: TextStyle(color: Colors.orange, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.5))),
-          ],
-        ],
+    final hasDate = event['proposed_date'] != null && event['proposed_date'].toString().trim().isNotEmpty;
+    final hasLetter = event['letter_url'] != null && event['letter_url'].toString().trim().isNotEmpty;
+
+    Widget viewLetterBtn() => IconButton(
+      tooltip: 'View Letter',
+      icon: const Icon(Icons.file_present_rounded, color: Colors.blue),
+      onPressed: () async {
+        final ok = await StorageUtils.open(event['letter_url'].toString());
+        if (!ok && context.mounted) AppUtils.showTopToast(context, 'Could not open the letter.', isError: true);
+      },
+    );
+
+    if (status == 'Needs Revision') {
+      return ElevatedButton.icon(
+        onPressed: () => _handleRevision(context, event, onRefresh),
+        icon: const Icon(Icons.edit_calendar_rounded, size: 16),
+        label: const Text('Revise Proposal'),
+        style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white, elevation: 0),
       );
-    } else if (status == 'Scheduled') {
-      final hasLetter = event['letter_url'] != null;
+    }
+
+    if (status == 'Approved') {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (hasLetter)
-            IconButton(onPressed: () async { final url = Uri.parse(event['letter_url'].toString()); if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication); }, icon: const Icon(Icons.file_present_rounded, color: Colors.blue)),
-          ElevatedButton.icon(onPressed: () => _uploadLetter(context, event, onRefresh), icon: Icon(hasLetter ? Icons.sync_rounded : Icons.upload_file_rounded, size: 16), label: Text(hasLetter ? 'Update Letter' : 'Upload Letter'), style: ElevatedButton.styleFrom(backgroundColor: hasLetter ? Colors.blue : const Color(0xFF10B981), foregroundColor: Colors.white, elevation: 0)),
+          IconButton(
+            tooltip: 'Pick Date & Time',
+            onPressed: () => _selectDate(context, event, onRefresh),
+            icon: Icon(Icons.edit_calendar_rounded, color: hasDate ? const Color(0xFF10B981) : const Color(0xFF6366F1)),
+          ),
+          if (hasLetter) viewLetterBtn(),
+          OutlinedButton.icon(
+            onPressed: () => _uploadLetter(context, event, onRefresh),
+            icon: Icon(hasLetter ? Icons.sync_rounded : Icons.upload_file_rounded, size: 16),
+            label: Text(hasLetter ? 'Replace Letter' : 'Attach Letter'),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton.icon(
+            onPressed: (hasDate && hasLetter)
+                ? () async {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Submit for Approval'),
+                  content: const Text('Submit this event date and approved letter to OSDW for approval?'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                    ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1)), child: const Text('Submit')),
+                  ],
+                ),
+              );
+              if (confirm == true && context.mounted) _requestDateApproval(context, event, onRefresh);
+            }
+                : null,
+            icon: const Icon(Icons.send_rounded, size: 16),
+            label: const Text('Submit'),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6366F1), foregroundColor: Colors.white, elevation: 0),
+          ),
         ],
       );
     }
+
+    if (status == 'Awaiting Date Approval') {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (hasLetter) viewLetterBtn(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+            child: const Text('Pending Approval', style: TextStyle(color: Colors.orange, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+          ),
+        ],
+      );
+    }
+
+    if (status == 'Scheduled' && hasLetter) return viewLetterBtn();
     return const SizedBox();
   }
 
@@ -1474,25 +1441,22 @@ class _OrgManageEventsView extends StatelessWidget {
 
   Future<void> _uploadLetter(BuildContext context, Map<String, dynamic> event, VoidCallback onRefresh) async {
     try {
-      final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'png']);
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+        withData: true,
+      );
       if (result == null || result.files.isEmpty) return;
       final file = result.files.first;
-      final fileName = 'letters/${DateTime.now().millisecondsSinceEpoch}_${file.name}';
-      if (kIsWeb) {
-        if (file.bytes == null) {
-          return;
-        }
-        await Supabase.instance.client.storage.from('documents').uploadBinary(fileName, file.bytes!);
-      } else {
-        final path = file.path;
-        if (path == null) {
-          return;
-        }
-        await Supabase.instance.client.storage.from('documents').uploadBinary(fileName, await file.xFile.readAsBytes());
+      final bytes = file.bytes ?? await file.xFile.readAsBytes();
+
+      final path = await StorageUtils.upload('letters', file.name, bytes); // stores PATH, not public URL
+      await Supabase.instance.client.from('activities').update({'letter_url': path}).eq('id', event['id']);
+
+      if (context.mounted) {
+        AppUtils.showTopToast(context, 'Letter attached.');
+        onRefresh();
       }
-      final url = Supabase.instance.client.storage.from('documents').getPublicUrl(fileName);
-      await Supabase.instance.client.from('activities').update({'letter_url': url}).eq('id', event['id']);
-      if (context.mounted) onRefresh();
     } catch (e) {
       if (context.mounted) AppUtils.showTopToast(context, 'Upload failed: $e', isError: true);
     }
@@ -1529,14 +1493,27 @@ class _OrgManageEventsView extends StatelessWidget {
   }
 
   Future<void> _requestDateApproval(BuildContext context, Map<String, dynamic> event, VoidCallback onRefresh) async {
-    if (event['proposed_date'] == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Select a date first.')));
+    final hasDate = event['proposed_date'] != null && event['proposed_date'].toString().trim().isNotEmpty;
+    final hasLetter = event['letter_url'] != null && event['letter_url'].toString().trim().isNotEmpty;
+    if (!hasDate || !hasLetter) {
+      AppUtils.showTopToast(context, 'Pick a date and attach the approved letter first.', isError: true);
       return;
     }
     try {
-      await Supabase.instance.client.from('activities').update({'status': 'Awaiting Date Approval'}).eq('id', event['id']);
+      await Supabase.instance.client
+          .from('activities')
+          .update({'status': 'Awaiting Date Approval', 'remarks': null})
+          .eq('id', event['id']);
+
+      AppUtils.sendNotification(
+        title: 'Event Date Submitted 📅',
+        body: '"${event['title']}" has a proposed date and approved letter awaiting your review.',
+        recipientRole: 'admin',
+        organizationId: event['organization_id']?.toString(),
+      );
+
       if (context.mounted) {
-        AppUtils.showTopToast(context, 'Event submitted for date approval!');
+        AppUtils.showTopToast(context, 'Event submitted for approval!');
         onRefresh();
       }
     } catch (e) {
@@ -1545,131 +1522,30 @@ class _OrgManageEventsView extends StatelessWidget {
   }
 }
 
-// Adviser Review View
-class _GPOAReviewView extends StatelessWidget {
-  final List<Map<String, dynamic>> activities;
-  final VoidCallback onRefresh;
-
-  const _GPOAReviewView({required this.activities, required this.onRefresh});
-
-  @override
-  Widget build(BuildContext context) {
-    final reviewList = activities.where((a) => ['Pending', 'Needs Revision'].contains(a['status'])).toList();
-
-    return Padding(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('GPOA Review Queue', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          const Text('Endorse proposals or track revisions.', style: TextStyle(color: Colors.grey)),
-          const SizedBox(height: 24),
-          Expanded(
-            child: reviewList.isEmpty
-                ? const Center(child: Text('No activities in review.'))
-                : ListView.builder(
-                    itemCount: reviewList.length,
-                    itemBuilder: (context, index) {
-                      final activity = reviewList[index];
-                      final isWaiting = activity['status'] == 'Needs Revision';
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 24.0),
-                        child: GPOAActivityDetailsView(
-                          title: activity['title'] ?? 'Untitled',
-                          sdgs: activity['sdgs'] ?? '',
-                          objectives: activity['objectives'] ?? '',
-                          outcome: activity['outcome'] ?? '',
-                          participants: activity['participants'] ?? '',
-                          timeFrame: activity['time_frame'] ?? '',
-                          delivery: activity['delivery_strategy'] ?? '',
-                          persons: activity['persons_involved'] ?? '',
-                          facilities: activity['facilities_materials'] ?? '',
-                          budget: activity['budget_allocation'] ?? '',
-                          status: activity['status'] ?? 'Pending',
-                          createdAt: AppUtils.formatDateTime(activity['created_at']),
-                          proposedDate: activity['proposed_date'] != null ? AppUtils.formatDateTime(activity['proposed_date']) : null,
-                          onStatusUpdate: isWaiting ? null : (s) async {
-                            if (s == 'Needs Revision' || s == 'Rejected') {
-                              final remarkController = TextEditingController();
-                              final isReject = s == 'Rejected';
-                              final confirm = await showDialog<bool>(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  title: Text(isReject ? 'Reject GPOA' : 'Return for Revision'),
-                                  content: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(isReject ? 'Reason for rejection:' : 'Explain needs changes:'),
-                                      const SizedBox(height: 16),
-                                      TextField(controller: remarkController, decoration: const InputDecoration(labelText: 'Remarks', border: OutlineInputBorder()), maxLines: 4),
-                                    ],
-                                  ),
-                                  actions: [
-                                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                                    ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: isReject ? Colors.red : Colors.orange), child: Text(isReject ? 'Reject' : 'Send Feedback')),
-                                  ],
-                                ),
-                              );
-                              if (confirm != true) return;
-                              try {
-                                await Supabase.instance.client.from('activities').update({'status': s, 'remarks': remarkController.text}).eq('id', activity['id']);
-                                if (context.mounted) AppUtils.showTopToast(context, s == 'Rejected' ? 'Proposal rejected.' : 'Feedback sent.');
-                                onRefresh();
-                              } catch (e) {
-                                if (context.mounted) AppUtils.showTopToast(context, 'Error: $e', isError: true);
-                              }
-                            } else {
-                              final confirm = await showDialog<bool>(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  title: const Text('Confirm Endorsement'),
-                                  content: const Text('Are you sure you want to endorse this activity proposal?'),
-                                  actions: [
-                                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                                    ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: Colors.green), child: const Text('Endorse')),
-                                  ],
-                                ),
-                              );
-                              if (confirm == true) {
-                                if (context.mounted) {
-                                  _updateStatus(context, activity['id'], s);
-                                  AppUtils.showTopToast(context, 'GPOA Endorsed successfully!');
-                                }
-                              }
-                            }
-                          },
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _updateStatus(BuildContext context, dynamic id, String s) async {
-    try {
-      await Supabase.instance.client.from('activities').update({'status': s}).eq('id', id);
-      onRefresh();
-    } catch (e) {
-      if (context.mounted) AppUtils.showTopToast(context, 'Error: $e', isError: true);
-    }
-  }
-}
-
 // Reports View Component
-class _SubmitReportView extends StatelessWidget {
+class _SubmitReportView extends StatefulWidget {
   final List<Map<String, dynamic>> activities;
   final String userRole;
   final VoidCallback onRefresh;
 
-  const _SubmitReportView({required this.activities, required this.userRole, required this.onRefresh});
+  const _SubmitReportView({
+    required this.activities,
+    required this.userRole,
+    required this.onRefresh,
+  });
+
+  @override
+  State<_SubmitReportView> createState() => _SubmitReportViewState();
+}
+
+class _SubmitReportViewState extends State<_SubmitReportView> {
+  bool _showApprovedFilter = false;
+  int _refreshKey = 0;
 
   @override
   Widget build(BuildContext context) {
-    final isAdviser = userRole == 'Adviser';
-    final completed = activities.where((a) => a['is_archived'] != true && ['Completed', 'Scheduled'].contains(a['status'])).toList();
+    final isAdviser = widget.userRole == 'Adviser';
+
 
     return Padding(
       padding: const EdgeInsets.all(36),
@@ -1695,120 +1571,202 @@ class _SubmitReportView extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 32),
-          Expanded(
-            child: completed.isEmpty
-                ? Center(
-                    child: Column(
+          const SizedBox(height: 24),
+          DefaultTabController(
+            length: 2,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10)],
+              ),
+              child: TabBar(
+                labelColor: Colors.white,
+                unselectedLabelColor: const Color(0xFF64748B),
+                indicatorSize: TabBarIndicatorSize.tab,
+                indicator: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: const Color(0xFF6366F1),
+                ),
+                dividerColor: Colors.transparent,
+                onTap: (idx) {
+                  setState(() {
+                    _showApprovedFilter = (idx == 1);
+                  });
+                },
+                tabs: const [
+                  Tab(
+                    child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Icon(Icons.assignment_turned_in_outlined, size: 52, color: Color(0xFF94A3B8)),
-                        SizedBox(height: 12),
-                        Text('No activities require accomplishment reports at this time.', style: TextStyle(color: Color(0xFF64748B), fontSize: 14)),
+                      children: [
+                        Icon(Icons.assignment_late_rounded, size: 18),
+                        SizedBox(width: 8),
+                        Text('Awaiting Approval', style: TextStyle(fontWeight: FontWeight.bold)),
                       ],
                     ),
-                  )
-                : FutureBuilder<List<Map<String, dynamic>>>(
-                    future: _fetchReports(),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                      final reports = snapshot.data ?? [];
+                  ),
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.verified_rounded, size: 18),
+                        SizedBox(width: 8),
+                        Text('Approved Reports', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+          Expanded(
+            child: FutureBuilder<List<Map<String, dynamic>>>(
+              key: ValueKey('$_showApprovedFilter-$_refreshKey'),
+              future: _fetchReports(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+                final reports = snapshot.data ?? [];
 
-                      return ListView.builder(
-                        itemCount: completed.length,
-                        itemBuilder: (context, index) {
-                          final activity = completed[index];
-                          final report = reports.cast<Map<String, dynamic>?>().firstWhere((r) => r?['activity_id'] == activity['id'], orElse: () => null);
+                final source = widget.activities.where((a) {
+                  if (a['is_archived'] == true) return false;
+                  final hasReport = reports.any((r) => r['activity_id']?.toString() == a['id']?.toString());
+                  return AppUtils.isEventDone(a) || hasReport;
+                }).toList();
 
-                          final hasReport = report != null;
-                          final reportStatus = report?['status'] ?? 'Pending Submission';
-                          final isReportApproved = reportStatus == 'Approved';
+                final filteredActivities = source.where((activity) {
+                  final report = reports.cast<Map<String, dynamic>?>().firstWhere(
+                    (r) => r != null && r['activity_id']?.toString() == activity['id']?.toString(),
+                    orElse: () => null,
+                  );
 
-                          final eventDateText = activity['proposed_date'] != null
-                              ? AppUtils.formatDateTime(activity['proposed_date'])
-                              : 'Not selected';
+                  final reportStatus = (report?['status'] ?? '').toString().toLowerCase();
+                  final isReportApproved = ['approved', 'completed', 'verified', 'passed'].contains(reportStatus);
 
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 16),
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFAF5FF),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: Colors.purple.shade100),
-                            ),
-                            child: Row(
+                  if (_showApprovedFilter) {
+                    return isReportApproved;
+                  } else {
+                    return !isReportApproved;
+                  }
+                }).toList();
+
+                if (filteredActivities.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.assignment_turned_in_outlined, size: 52, color: Color(0xFF94A3B8)),
+                        const SizedBox(height: 12),
+                        Text(
+                          _showApprovedFilter ? 'No approved accomplishment reports found.' : 'No finished events are waiting for a report.',
+                          style: const TextStyle(color: Color(0xFF64748B), fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return ListView.builder(
+                  itemCount: filteredActivities.length,
+                  itemBuilder: (context, index) {
+                    final activity = filteredActivities[index];
+                    final report = reports.cast<Map<String, dynamic>?>().firstWhere(
+                      (r) => r != null && r['activity_id']?.toString() == activity['id']?.toString(),
+                      orElse: () => null,
+                    );
+
+                    final hasReport = report != null;
+                    final reportStatus = (report?['status'] ?? 'Pending Submission').toString();
+                    final reportStatusLower = reportStatus.toLowerCase();
+                    final isReportApproved = ['approved', 'completed', 'verified', 'passed'].contains(reportStatusLower);
+                    final displayReportStatus = isReportApproved ? 'Approved' : (reportStatusLower.contains('revision') ? 'Needs Revision' : reportStatus);
+
+                    final eventDateText = activity['proposed_date'] != null
+                        ? AppUtils.formatDateTime(activity['proposed_date'])
+                        : 'Not selected';
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFAF5FF),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.purple.shade100),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(color: const Color(0xFFE0E7FF), borderRadius: BorderRadius.circular(14)),
+                            child: const Icon(Icons.calendar_today_rounded, color: Color(0xFF6366F1), size: 24),
+                          ),
+                          const SizedBox(width: 20),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(color: const Color(0xFFE0E7FF), borderRadius: BorderRadius.circular(14)),
-                                  child: const Icon(Icons.calendar_today_rounded, color: Color(0xFF6366F1), size: 24),
+                                Text(
+                                  activity['title'] ?? 'Untitled Activity',
+                                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: Color(0xFF1E293B)),
                                 ),
-                                const SizedBox(width: 20),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        activity['title'] ?? 'Untitled Activity',
-                                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: Color(0xFF1E293B)),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Row(
-                                        children: [
-                                          const Text('Current Status: ', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                                          StatusBadge(status: hasReport ? reportStatus : 'Approved'),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Date & Time: $eventDateText',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          color: activity['proposed_date'] == null ? const Color(0xFFDC2626) : const Color(0xFF475569),
-                                        ),
-                                      ),
-                                    ],
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    const Text('Current Status: ', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                                    StatusBadge(status: displayReportStatus),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Date & Time: $eventDateText',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: activity['proposed_date'] == null ? const Color(0xFFDC2626) : const Color(0xFF475569),
                                   ),
                                 ),
-                                const SizedBox(width: 20),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      tooltip: 'View Details',
-                                      icon: const Icon(Icons.info_outline_rounded, color: Color(0xFF64748B), size: 22),
-                                      onPressed: () => _showActivityDetails(context, activity),
-                                    ),
-                                    if (hasReport) ...[
-                                      IconButton(
-                                        tooltip: 'View Files',
-                                        icon: const Icon(Icons.remove_red_eye_rounded, color: Color(0xFF6366F1), size: 22),
-                                        onPressed: () async {
-                                          final attachments = report['attachments'];
-                                          if (attachments is List && attachments.isNotEmpty) {
-                                            final url = Uri.parse(attachments.first.toString());
-                                            if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
-                                          } else {
-                                            AppUtils.showTopToast(context, 'No attachment file available.');
-                                          }
-                                        },
-                                      ),
-                                      const SizedBox(width: 8),
-                                    ],
-                                    if (isAdviser && hasReport && !isReportApproved) ...[
-                                      ElevatedButton(
-                                        onPressed: () => _updateReportStatus(report['id'], 'Approved'),
-                                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), foregroundColor: Colors.white, elevation: 0),
-                                        child: const Text('Approve', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      OutlinedButton(
-                                        onPressed: () => _updateReportStatus(report['id'], 'Needs Revision'),
-                                        style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDC2626), side: const BorderSide(color: Color(0xFFDC2626))),
-                                        child: const Text('Return', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                                      ),
-                                    ] else if (!isAdviser && !isReportApproved) ...[
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 20),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                tooltip: 'View Details',
+                                icon: const Icon(Icons.info_outline_rounded, color: Color(0xFF64748B), size: 22),
+                                onPressed: () => _showActivityDetails(context, activity),
+                              ),
+                              if (hasReport) ...[
+                                IconButton(
+                                  tooltip: 'View Files',
+                                  icon: const Icon(Icons.remove_red_eye_rounded, color: Color(0xFF6366F1), size: 22),
+                                  onPressed: () async {
+                                    final attachments = report['attachments'];
+                                    if (attachments is List && attachments.isNotEmpty) {
+                                      final url = Uri.parse(attachments.first.toString());
+                                      if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
+                                    } else {
+                                      AppUtils.showTopToast(context, 'No attachment file available.');
+                                    }
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              if (isAdviser && hasReport && !isReportApproved) ...[
+                                ElevatedButton(
+                                  onPressed: () => _updateReportStatus(report['id'], report, 'Approved'),
+                                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), foregroundColor: Colors.white, elevation: 0),
+                                  child: const Text('Approve', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                ),
+                                const SizedBox(width: 8),
+                                OutlinedButton(
+                                  onPressed: () => _updateReportStatus(report['id'], report, 'Needs Revision'),
+                                  style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDC2626), side: const BorderSide(color: Color(0xFFDC2626))),
+                                  child: const Text('Return', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                ),
+                              ] else if (!isAdviser && !isReportApproved) ...[
                                       ElevatedButton.icon(
                                         onPressed: () => _showSubmitReportModal(context, activity, report),
                                         icon: const Icon(Icons.send_rounded, size: 16),
@@ -1868,16 +1826,19 @@ class _SubmitReportView extends StatelessWidget {
   }
 
   void _showSubmitReportModal(BuildContext context, Map<String, dynamic> activity, Map<String, dynamic>? existingReport) {
+    if (!AppUtils.isEventDone(activity)) {
+      AppUtils.showTopToast(context, 'You can only submit a report after the event is done.', isError: true);
+      return;
+    }
     showDialog(
       context: context,
       builder: (ctx) => _SubmitReportDialog(
         activity: activity,
         existingReport: existingReport,
-        onRefresh: onRefresh,
+        onRefresh: widget.onRefresh,
       ),
     );
   }
-
   Future<List<Map<String, dynamic>>> _fetchReports() async {
     final response = await Supabase.instance.client
         .from('accomplishment_reports')
@@ -1886,10 +1847,41 @@ class _SubmitReportView extends StatelessWidget {
     return List<Map<String, dynamic>>.from(response);
   }
 
-  Future<void> _updateReportStatus(dynamic reportId, String status) async {
+  Future<void> _updateReportStatus(dynamic reportId, Map<String, dynamic>? report, String status) async {
+    setState(() {
+      if (report != null) report['status'] = status;
+      _refreshKey++;
+    });
+
     try {
-      await Supabase.instance.client.from('accomplishment_reports').update({'status': status}).eq('id', reportId);
-      onRefresh();
+      final statusesToTry = status == 'Approved'
+          ? ['Approved', 'APPROVED', 'Completed', 'Verified']
+          : [status, status.toUpperCase(), status.toLowerCase()];
+
+      for (var sVal in statusesToTry) {
+        try {
+          await Supabase.instance.client.from('accomplishment_reports').update({'status': sVal}).eq('id', reportId);
+          break;
+        } catch (e) {
+          if (!e.toString().contains('accomplishment_reports_status_check')) {
+            rethrow;
+          }
+        }
+      }
+
+      if (status == 'Approved' && report != null) {
+        final actId = report['activity_id'];
+        if (actId != null) {
+          for (var actStatusVal in ['Completed', 'COMPLETED', 'Approved']) {
+            try {
+              await Supabase.instance.client.from('activities').update({'status': actStatusVal}).eq('id', actId);
+              break;
+            } catch (_) {}
+          }
+        }
+      }
+
+      widget.onRefresh();
     } catch (e) {
       debugPrint('Error updating report status: $e');
     }
@@ -1914,7 +1906,6 @@ class _SubmitReportDialog extends StatefulWidget {
 class _SubmitReportDialogState extends State<_SubmitReportDialog> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _titleController;
-  late TextEditingController _summaryController;
   final List<FilePickerResult> _selectedFiles = [];
   final List<String> _existingUrls = [];
   bool _isSubmitting = false;
@@ -1924,7 +1915,6 @@ class _SubmitReportDialogState extends State<_SubmitReportDialog> {
     super.initState();
     final rep = widget.existingReport;
     _titleController = TextEditingController(text: rep?['title']?.toString() ?? 'Accomplishment Report: ${widget.activity['title']}');
-    _summaryController = TextEditingController(text: rep?['summary']?.toString() ?? '');
 
     final rawAttach = rep?['attachments'];
     if (rawAttach is List) {
@@ -1935,7 +1925,6 @@ class _SubmitReportDialogState extends State<_SubmitReportDialog> {
   @override
   void dispose() {
     _titleController.dispose();
-    _summaryController.dispose();
     super.dispose();
   }
 
@@ -1955,6 +1944,12 @@ class _SubmitReportDialogState extends State<_SubmitReportDialog> {
   Future<void> _submitReport() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final totalNewFiles = _selectedFiles.fold<int>(0, (sum, res) => sum + res.files.length);
+    if (_existingUrls.isEmpty && totalNewFiles == 0) {
+      AppUtils.showTopToast(context, 'Please attach at least one document or file (Narrative Report / Photos / Vouchers) before submitting.', isError: true);
+      return;
+    }
+
     setState(() => _isSubmitting = true);
     try {
       final List<String> uploadUrls = List<String>.from(_existingUrls);
@@ -1972,34 +1967,73 @@ class _SubmitReportDialogState extends State<_SubmitReportDialog> {
       }
 
       if (widget.existingReport != null) {
-        await Supabase.instance.client.from('accomplishment_reports').update({
-          'title': _titleController.text.trim(),
-          'summary': _summaryController.text.trim(),
-          'attachments': uploadUrls,
-          'status': 'Pending',
-          'report_date': DateTime.now().toIso8601String(),
-          'is_archived': false,
-        }).eq('id', widget.existingReport!['id']);
+        try {
+          await Supabase.instance.client.from('accomplishment_reports').update({
+            'title': _titleController.text.trim(),
+            'summary': 'Submitted Accomplishment Report',
+            'attachments': uploadUrls,
+            'status': 'Pending',
+            'report_date': DateTime.now().toIso8601String(),
+            'is_archived': false,
+          }).eq('id', widget.existingReport!['id']);
+        } catch (err) {
+          if (err.toString().contains('accomplishment_reports_status_check')) {
+            await Supabase.instance.client.from('accomplishment_reports').update({
+              'title': _titleController.text.trim(),
+              'summary': 'Submitted Accomplishment Report',
+              'attachments': uploadUrls,
+              'status': 'Submitted',
+              'report_date': DateTime.now().toIso8601String(),
+              'is_archived': false,
+            }).eq('id', widget.existingReport!['id']);
+          } else {
+            rethrow;
+          }
+        }
       } else {
-        await Supabase.instance.client.from('accomplishment_reports').insert({
-          'organization_id': widget.activity['organization_id'],
-          'activity_id': widget.activity['id'],
-          'title': _titleController.text.trim(),
-          'summary': _summaryController.text.trim(),
-          'attachments': uploadUrls,
-          'status': 'Pending',
-          'report_date': DateTime.now().toIso8601String(),
-        });
+        try {
+          await Supabase.instance.client.from('accomplishment_reports').insert({
+            'organization_id': widget.activity['organization_id'],
+            'activity_id': widget.activity['id'],
+            'title': _titleController.text.trim(),
+            'summary': 'Submitted Accomplishment Report',
+            'attachments': uploadUrls,
+            'status': 'Pending',
+            'report_date': DateTime.now().toIso8601String(),
+          });
+        } catch (err) {
+          if (err.toString().contains('accomplishment_reports_status_check')) {
+            await Supabase.instance.client.from('accomplishment_reports').insert({
+              'organization_id': widget.activity['organization_id'],
+              'activity_id': widget.activity['id'],
+              'title': _titleController.text.trim(),
+              'summary': 'Submitted Accomplishment Report',
+              'attachments': uploadUrls,
+              'status': 'Submitted',
+              'report_date': DateTime.now().toIso8601String(),
+            });
+          } else {
+            rethrow;
+          }
+        }
       }
 
-      try {
-        final orgName = widget.activity['organization_name'] ?? 'Organization';
-        await Supabase.instance.client.from('notifications').insert({
-          'title': 'Accomplishment Report Submitted',
-          'body': '$orgName submitted accomplishment report for "${widget.activity['title']}".',
-          'status': 'Pending',
-        });
-      } catch (_) {}
+      final orgName = (widget.activity['organization_name'] ?? 'Organization').toString();
+      final orgId = widget.activity['organization_id']?.toString();
+      final actTitle = (widget.activity['title'] ?? 'Activity').toString();
+
+      AppUtils.sendNotification(
+        title: 'Accomplishment Report Submitted 📄',
+        body: '$orgName submitted accomplishment report for "$actTitle".',
+        recipientRole: 'admin',
+        organizationId: orgId,
+      );
+      AppUtils.sendNotification(
+        title: 'Accomplishment Report Submitted 📄',
+        body: 'New accomplishment report submitted for "$actTitle".',
+        recipientRole: 'adviser',
+        organizationId: orgId,
+      );
 
       if (mounted) {
         Navigator.pop(context);
@@ -2068,20 +2102,8 @@ class _SubmitReportDialogState extends State<_SubmitReportDialog> {
                         ),
                         validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
                       ),
-                      const SizedBox(height: 18),
-                      TextFormField(
-                        controller: _summaryController,
-                        maxLines: 4,
-                        decoration: InputDecoration(
-                          labelText: 'Accomplishment Summary & Highlights',
-                          alignLabelWithHint: true,
-                          prefixIcon: const Icon(Icons.notes_rounded, size: 20),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          hintText: 'Briefly summarize key outcomes, attendance, and impact…',
-                        ),
-                      ),
                       const SizedBox(height: 20),
-                      const Text('Report Attachments & Proofs', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+                      const Text('Report Attachments & Proofs *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
                       const SizedBox(height: 8),
                       OutlinedButton.icon(
                         onPressed: _pickFiles,
@@ -2152,10 +2174,12 @@ class _GPOAStatusGridView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final activeActivities = activities.where((a) => a['is_archived'] != true).toList();
-    final archived = activities.where((a) => a['is_archived'] == true).toList();
     final inReview = activeActivities.where((a) => ['Pending', 'Endorsed'].contains(a['status'])).toList();
-    final approved = activeActivities.where((a) => a['status'] == 'Approved').toList();
+    final approved = activeActivities
+        .where((a) => ['Approved', 'Awaiting Date Approval', 'Scheduled'].contains(a['status']))
+        .toList();
     final revision = activeActivities.where((a) => a['status'] == 'Needs Revision').toList();
+    final completed = activeActivities.where((a) => a['status'] == 'Completed').toList();
     final declined = activeActivities.where((a) => a['status'] == 'Rejected').toList();
     final isAdviser = userRole == 'Adviser';
 
@@ -2173,7 +2197,7 @@ class _GPOAStatusGridView extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('Manage GPOA', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Color(0xFF0F172A), letterSpacing: -1)),
-                    const Text('Monitor the approval life-cycle of your submitted GPOA activities.', style: TextStyle(color: Color(0xFF64748B), fontSize: 16)),
+                    Text(isAdviser ? 'Review, endorse, and manage GPOA activity proposals.' : 'Monitor the approval life-cycle of your submitted GPOA activities.', style: const TextStyle(color: Color(0xFF64748B), fontSize: 16)),
                   ],
                 ),
                 Row(
@@ -2217,11 +2241,11 @@ class _GPOAStatusGridView extends StatelessWidget {
                 indicator: BoxDecoration(borderRadius: BorderRadius.circular(12), color: const Color(0xFF6366F1)),
                 dividerColor: Colors.transparent,
                 tabs: [
-                  Tab(child: Text('Under Review (${inReview.length})', style: const TextStyle(fontWeight: FontWeight.bold))),
+                  Tab(child: Text(isAdviser ? 'GPOA Review (${inReview.length})' : 'Under Review (${inReview.length})', style: const TextStyle(fontWeight: FontWeight.bold))),
                   Tab(child: Text('Approved (${approved.length})', style: const TextStyle(fontWeight: FontWeight.bold))),
                   Tab(child: Text('Needs Correction (${revision.length})', style: const TextStyle(fontWeight: FontWeight.bold))),
+                  Tab(child: Text('Completed (${completed.length})', style: const TextStyle(fontWeight: FontWeight.bold))),
                   Tab(child: Text('Declined (${declined.length})', style: const TextStyle(fontWeight: FontWeight.bold))),
-                  Tab(child: Text('Archived (${archived.length})', style: const TextStyle(fontWeight: FontWeight.bold))),
                 ],
               ),
             ),
@@ -2229,11 +2253,11 @@ class _GPOAStatusGridView extends StatelessWidget {
             Expanded(
               child: TabBarView(
                 children: [
-                  _buildGrid(inReview, 'No proposals currently under review.'),
-                  _buildGrid(approved, 'No approved proposals yet.'),
-                  _buildGrid(revision, 'All clear! No revisions requested.'),
-                  _buildGrid(declined, 'No declined proposals found.'),
-                  _buildGrid(archived, 'No archived GPOA activities.'),
+                  _buildList(inReview, isAdviser ? 'No GPOA proposals currently awaiting review.' : 'No proposals currently under review.'),
+                  _buildList(approved, 'No approved proposals yet.'),
+                  _buildList(revision, 'All clear! No revisions requested.'),
+                  _buildList(completed, 'No completed GPOA activities yet.'),
+                  _buildList(declined, 'No declined proposals found.'),
                 ],
               ),
             ),
@@ -2243,134 +2267,164 @@ class _GPOAStatusGridView extends StatelessWidget {
     );
   }
 
-  Widget _buildGrid(List<Map<String, dynamic>> list, String emptyText) {
-    if (list.isEmpty) return Center(child: Text(emptyText, style: const TextStyle(color: Colors.grey)));
-    return GridView.builder(
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 20, mainAxisSpacing: 20, childAspectRatio: 1.4),
+  Widget _buildList(List<Map<String, dynamic>> list, String emptyText) {
+    if (list.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.inbox_rounded, size: 48, color: Color(0xFF94A3B8)),
+              const SizedBox(height: 12),
+              Text(emptyText, style: const TextStyle(color: Color(0xFF64748B), fontSize: 14)),
+            ],
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
       itemCount: list.length,
-      itemBuilder: (context, index) => _GPOAStatusCard(activity: list[index], onRefresh: onRefresh),
+      itemBuilder: (context, index) => _GPOAStatusCard(
+        activity: list[index],
+        userRole: userRole,
+        onRefresh: onRefresh,
+      ),
     );
   }
 }
 
 class _GPOAStatusCard extends StatelessWidget {
   final Map<String, dynamic> activity;
+  final String userRole;
   final VoidCallback onRefresh;
-  const _GPOAStatusCard({required this.activity, required this.onRefresh});
+
+  const _GPOAStatusCard({
+    required this.activity,
+    required this.userRole,
+    required this.onRefresh,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final isAdviser = userRole == 'Adviser';
     final status = activity['status'] ?? 'Pending';
-    Color color = const Color(0xFF64748B);
-    IconData icon = Icons.hourglass_empty_rounded;
+    final remarks = activity['remarks']?.toString();
 
-    if (['Approved', 'Scheduled'].contains(status)) { color = const Color(0xFF10B981); icon = Icons.check_circle_outline_rounded; }
-    if (status == 'Completed') { color = const Color(0xFF6366F1); icon = Icons.task_alt_rounded; }
-    if (status == 'Rejected') { color = const Color(0xFFEF4444); icon = Icons.cancel_outlined; }
-    if (status == 'Needs Revision') { color = const Color(0xFFF97316); icon = Icons.history_edu_rounded; }
-    if (status == 'Awaiting Date Approval') { color = const Color(0xFF8B5CF6); icon = Icons.calendar_month_rounded; }
-    if (status == 'Endorsed') { color = const Color(0xFF14B8A6); icon = Icons.thumb_up_alt_rounded; }
+    final hasDate = activity['proposed_date'] != null && activity['proposed_date'].toString().trim().isNotEmpty;
+    final dateText = hasDate ? AppUtils.formatDateTime(activity['proposed_date']) : null;
 
     return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4))],
-        border: Border.all(color: color.withValues(alpha: 0.1), width: 1),
+        color: const Color(0xFFFAF5FF),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.purple.shade100),
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => _showActivityDetails(context, activity, onRefresh),
-          borderRadius: BorderRadius.circular(24),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: const Color(0xFFE0E7FF), borderRadius: BorderRadius.circular(14)),
+            child: const Icon(Icons.calendar_today_rounded, color: Color(0xFF6366F1), size: 24),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text(
+                  activity['title'] ?? 'Untitled Activity',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: Color(0xFF0F172A)),
+                ),
+                const SizedBox(height: 6),
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: color, size: 22)),
+                    const Text('Current Status: ', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
                     StatusBadge(status: status),
                   ],
                 ),
-                const SizedBox(height: 24),
-                Text(activity['title'] ?? 'Untitled', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: Color(0xFF1E293B), letterSpacing: -0.5), maxLines: 2, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 8),
-                Text(activity['subtitle'] ?? 'GPOA Activity', style: TextStyle(fontSize: 12, color: const Color(0xFF6366F1).withValues(alpha: 0.8), fontWeight: FontWeight.w700, letterSpacing: 0.5)),
-                const SizedBox(height: 4),
-                Text('Submitted: ${AppUtils.formatDateTime(activity['created_at'])}', style: TextStyle(fontSize: 10, color: Colors.grey[400], fontStyle: FontStyle.italic)),
-                if (activity['remarks']?.toString().isNotEmpty ?? false) ...[
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: const Color(0xFFEF4444).withValues(alpha: 0.05), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.1))),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(Icons.feedback_rounded, size: 14, color: Color(0xFFEF4444)),
-                        const SizedBox(width: 8),
-                        Expanded(child: Text('Feedback: ${activity['remarks']}', style: const TextStyle(fontSize: 11, color: Color(0xFFEF4444), fontWeight: FontWeight.w600, height: 1.4))),
-                      ],
-                    ),
+                if (hasDate && dateText != null && dateText.isNotEmpty && dateText != 'Not set') ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Scheduled Date: $dateText',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
                   ),
                 ],
-                const Spacer(),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    if (status == 'Needs Revision' || (activity['remarks']?.toString().isNotEmpty ?? false) || status == 'Pending')
-                      Flexible(
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            showDialog(
-                              context: context,
-                              builder: (ctx) => _ReviseActivityDialog(
-                                activity: activity,
-                                userRole: 'President',
-                                onRefreshed: onRefresh,
-                              ),
-                            );
-                          },
-                          icon: const Icon(Icons.history_edu_rounded, size: 16),
-                          label: const Text('Revise / Edit', overflow: TextOverflow.ellipsis),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFF97316),
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                        ),
-                      ),
-                    IconButton(
-                      tooltip: activity['is_archived'] == true ? 'Restore' : 'Archive',
-                      onPressed: () async {
-                        final wasArchived = activity['is_archived'] == true;
-                        try {
-                          await Supabase.instance.client.from('activities').update({'is_archived': !wasArchived}).eq('id', activity['id']);
-                          if (context.mounted) {
-                            AppUtils.showTopToast(context, wasArchived ? 'GPOA restored.' : 'GPOA archived.');
-                            onRefresh();
-                          }
-                        } catch (e) {
-                          if (context.mounted) AppUtils.showTopToast(context, 'Could not update archive: $e', isError: true);
-                        }
-                      },
-                      icon: Icon(activity['is_archived'] == true ? Icons.unarchive_outlined : Icons.archive_outlined, size: 20, color: const Color(0xFF64748B)),
+                if (remarks != null && remarks.trim().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.2)),
                     ),
-                  ],
-                ),
+                    child: Text('Feedback: $remarks', style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626), fontWeight: FontWeight.bold)),
+                  ),
+                ],
               ],
             ),
           ),
-        ),
+          const SizedBox(width: 20),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: 'View Details',
+                icon: const Icon(Icons.info_outline_rounded, color: Color(0xFF64748B), size: 22),
+                onPressed: () => _showActivityDetails(context, activity, onRefresh),
+              ),
+              const SizedBox(width: 8),
+              if (isAdviser) ...[
+                if (status == 'Pending')
+                  ElevatedButton.icon(
+                    onPressed: () => _showActivityDetails(context, activity, onRefresh),
+                    icon: const Icon(Icons.rate_review_rounded, size: 16),
+                    label: const Text('GPOA Review'),
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), foregroundColor: Colors.white, elevation: 0),
+                  ),
+              ] else ...[
+                if (status == 'Needs Revision') ...[
+                  ElevatedButton.icon(
+                    onPressed: () => showDialog(
+                      context: context,
+                      builder: (ctx) => _ReviseActivityDialog(activity: activity, userRole: userRole, onRefreshed: onRefresh),
+                    ),
+                    icon: const Icon(Icons.send_rounded, size: 16),
+                    label: const Text('Revise & Resubmit'),
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF97316), foregroundColor: Colors.white, elevation: 0),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                IconButton(
+                  tooltip: activity['is_archived'] == true ? 'Restore' : 'Archive',
+                  onPressed: () async {
+                    final wasArchived = activity['is_archived'] == true;
+                    try {
+                      await Supabase.instance.client.from('activities').update({'is_archived': !wasArchived}).eq('id', activity['id']);
+                      if (context.mounted) {
+                        AppUtils.showTopToast(context, wasArchived ? 'GPOA restored.' : 'GPOA archived.');
+                        onRefresh();
+                      }
+                    } catch (e) {
+                      if (context.mounted) AppUtils.showTopToast(context, 'Could not update archive: $e', isError: true);
+                    }
+                  },
+                  icon: Icon(activity['is_archived'] == true ? Icons.unarchive_outlined : Icons.archive_outlined, size: 20, color: const Color(0xFF64748B)),
+                ),
+              ],
+            ],
+          ),
+        ],
       ),
     );
   }
 
   void _showActivityDetails(BuildContext context, Map<String, dynamic> activity, VoidCallback onRefresh) {
+    final isAdviser = userRole == 'Adviser';
+    final status = activity['status'];
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -2392,18 +2446,18 @@ class _GPOAStatusCard extends StatelessWidget {
               budget: activity['budget_allocation'] ?? 'Not specified',
               status: activity['status'] ?? 'Pending',
               createdAt: AppUtils.formatDateTime(activity['created_at']),
-              proposedDate: activity['proposed_date'] != null ? AppUtils.formatDateTime(activity['proposed_date']) : null,
-              onStatusUpdate: (activity['status'] == 'Needs Revision' || (activity['remarks']?.toString().isNotEmpty ?? false) || activity['status'] == 'Pending') ? (s) async {
+              proposedDate: (activity['proposed_date'] != null && activity['proposed_date'].toString().trim().isNotEmpty) ? AppUtils.formatDateTime(activity['proposed_date']) : null,
+              onStatusUpdate: isAdviser
+                  ? (status == 'Pending' ? (s) => _adviserDecision(context, activity, s, onRefresh) : null)
+                  : (status == 'Needs Revision'
+                  ? (s) async {
                 Navigator.pop(context);
                 showDialog(
                   context: context,
-                  builder: (ctx) => _ReviseActivityDialog(
-                    activity: activity,
-                    userRole: 'President',
-                    onRefreshed: onRefresh,
-                  ),
+                  builder: (ctx) => _ReviseActivityDialog(activity: activity, userRole: userRole, onRefreshed: onRefresh),
                 );
-              } : null,
+              }
+                  : null),
             ),
           ),
         ),
@@ -2817,32 +2871,66 @@ class _OrgProfileViewState extends State<_OrgProfileView> {
     final posController = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add Officer to List'),
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Add Officer to List', style: TextStyle(fontWeight: FontWeight.bold)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Full Name'), inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z\s]'))]),
-            TextField(controller: posController, decoration: const InputDecoration(labelText: 'Position (e.g. Secretary, Treasurer)'), inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z\s]'))]),
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Full Name *',
+                prefixIcon: Icon(Icons.person_rounded, size: 20),
+                border: OutlineInputBorder(),
+              ),
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z\s.]'))],
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: posController,
+              decoration: const InputDecoration(
+                labelText: 'Position (e.g. Secretary, Treasurer) *',
+                prefixIcon: Icon(Icons.badge_rounded, size: 20),
+                border: OutlineInputBorder(),
+              ),
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z\s.]'))],
+            ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
-              onPressed: () async {
-                try {
-                  await _supabase.from('org_officers').insert({'full_name': nameController.text, 'position': posController.text, 'organization_id': widget.orgData['id']});
-                  if (context.mounted) {
-                    AppUtils.showTopToast(context, 'Officer added successfully!');
-                    Navigator.pop(context);
-                    Navigator.pop(context);
-                    _fetchProfileData();
-                  }
-                } catch (e) {
-                  if (context.mounted) AppUtils.showTopToast(context, 'Error: $e', isError: true);
+            onPressed: () async {
+              final fullName = nameController.text.trim();
+              final position = posController.text.trim();
+
+              if (fullName.isEmpty || position.isEmpty) {
+                AppUtils.showTopToast(ctx, 'Please fill in both the Officer Full Name and Position.', isError: true);
+                return;
+              }
+
+              try {
+                await _supabase.from('org_officers').insert({
+                  'full_name': fullName,
+                  'position': position,
+                  'organization_id': widget.orgData['id'],
+                });
+                if (ctx.mounted) {
+                  AppUtils.showTopToast(ctx, 'Officer $fullName added successfully!');
+                  Navigator.pop(ctx);
+                  if (context.mounted) _fetchProfileData();
                 }
-              },
-              child: const Text('Add to List')),
+              } catch (e) {
+                if (ctx.mounted) AppUtils.showTopToast(ctx, 'Error adding officer: $e', isError: true);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF6366F1),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Add to List'),
+          ),
         ],
       ),
     );
@@ -3308,14 +3396,12 @@ class _ReviseActivityDialogState extends State<_ReviseActivityDialog> {
         'remarks': null,
       }).eq('id', actId);
 
-      try {
-        final orgName = widget.activity['organization_name'] ?? 'Organization';
-        await Supabase.instance.client.from('notifications').insert({
-          'title': 'Proposal Revised - ${_titleController.text.trim()}',
-          'body': '$orgName resubmitted the revised activity proposal for review.',
-          'status': 'Pending',
-        });
-      } catch (_) {}
+      AppUtils.sendNotification(
+        title: 'Proposal Revised 📝',
+        body: '"${_titleController.text.trim()}" was revised and is back for your review.',
+        recipientRole: 'adviser',
+        organizationId: widget.activity['organization_id']?.toString(),
+      );
 
       if (mounted) {
         Navigator.pop(context);
@@ -3701,328 +3787,6 @@ class _ReviseActivityDialogState extends State<_ReviseActivityDialog> {
   }
 }
 
-class _ArchivesView extends StatefulWidget {
-  final List<Map<String, dynamic>> activities;
-  final Map<String, dynamic>? orgData;
-  final String userRole;
-
-  const _ArchivesView({
-    required this.activities,
-    this.orgData,
-    this.userRole = 'Admin',
-  });
-
-  @override
-  State<_ArchivesView> createState() => _ArchivesViewState();
-}
-
-class _ArchivesViewState extends State<_ArchivesView> {
-  String _searchQuery = '';
-  String _selectedCategory = 'All';
-  String _schoolYear = '2025-2026';
-  List<Map<String, dynamic>> _accomplishmentReports = [];
-  bool _isLoadingReports = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchAccomplishmentReports();
-  }
-
-  Future<void> _fetchAccomplishmentReports() async {
-    try {
-      final res = await Supabase.instance.client
-          .from('accomplishment_reports')
-          .select('*, activities(*)');
-      if (mounted) {
-        setState(() {
-          _accomplishmentReports = List<Map<String, dynamic>>.from(res);
-          _isLoadingReports = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _isLoadingReports = false);
-    }
-  }
-
-  void _openGPOADialog(List<Map<String, dynamic>> acts, String orgName) {
-    showDialog(
-      context: context,
-      builder: (ctx) => GPOAPreviewDialog(
-        organization: widget.orgData ?? {'name': orgName, 'type': 'College Student Council'},
-        activities: acts,
-        president: const {'full_name': 'Student Leader'},
-        adviser: const {'full_name': 'Faculty Adviser'},
-        fileName: 'GPOA_${orgName.replaceAll(" ", "_")}.pdf',
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final orgNameFilter = widget.orgData != null ? (widget.orgData!['name'] ?? '').toString().toLowerCase() : '';
-    final archivedDocs = <Map<String, dynamic>>[];
-
-    // 1. Process GPOAs - EXACTLY 1 GPOA ENTRY PER ORGANIZATION
-    if (_selectedCategory == 'All' || _selectedCategory == 'GPOA') {
-      final Map<String, List<Map<String, dynamic>>> orgActsMap = {};
-      final Map<String, String> orgNamesMap = {};
-
-      for (var act in widget.activities) {
-        final orgId = act['organization_id']?.toString() ?? widget.orgData?['id']?.toString() ?? 'unknown';
-        final orgName = (act['organization_name'] ?? widget.orgData?['name'] ?? 'Organization').toString();
-
-        if (orgNameFilter.isNotEmpty && !orgName.toLowerCase().contains(orgNameFilter)) {
-          continue;
-        }
-
-        orgNamesMap[orgId] = orgName;
-        orgActsMap.putIfAbsent(orgId, () => []).add(act);
-      }
-
-      orgActsMap.forEach((orgId, acts) {
-        final orgName = orgNamesMap[orgId] ?? 'Organization';
-
-        final query = _searchQuery.toLowerCase();
-        if (query.isNotEmpty && !orgName.toLowerCase().contains(query)) {
-          return;
-        }
-
-        archivedDocs.add({
-          'type': 'GPOA',
-          'title': 'Approved Annual GPOA - $orgName',
-          'org_name': orgName,
-          'date': 'SY $_schoolYear',
-          'color': const Color(0xFF4F46E5),
-          'icon': Icons.description_rounded,
-          'acts': acts,
-          'is_gpoa': true,
-        });
-      });
-    }
-
-    // 2. Process Approved Event Letters
-    for (var act in widget.activities) {
-      final actTitle = (act['title'] ?? 'Untitled Activity').toString();
-      final orgName = (act['organization_name'] ?? widget.orgData?['name'] ?? 'Organization').toString();
-
-      if (orgNameFilter.isNotEmpty && !orgName.toLowerCase().contains(orgNameFilter)) {
-        continue;
-      }
-
-      final query = _searchQuery.toLowerCase();
-      if (query.isNotEmpty && !actTitle.toLowerCase().contains(query) && !orgName.toLowerCase().contains(query)) {
-        continue;
-      }
-
-      if (act['letter_url'] != null && act['letter_url'].toString().isNotEmpty) {
-        if (_selectedCategory == 'All' || _selectedCategory == 'GPOA') {
-          archivedDocs.add({
-            'type': 'Approved Letter',
-            'title': 'Approved Event Letter - $actTitle',
-            'org_name': orgName,
-            'date': act['proposed_date']?.toString().split('T').first ?? 'SY $_schoolYear',
-            'color': const Color(0xFF0284C7),
-            'icon': Icons.mark_as_unread_rounded,
-            'file_url': act['letter_url'],
-            'act': act,
-            'is_gpoa': false,
-          });
-        }
-      }
-    }
-
-    // 2. Process Accomplishment Reports from Supabase
-    for (var rep in _accomplishmentReports) {
-      final act = rep['activities'] ?? {};
-      final actTitle = (act['title'] ?? rep['title'] ?? 'Activity Report').toString();
-      final orgName = (rep['organization_name'] ?? widget.orgData?['name'] ?? 'Organization').toString();
-
-      if (orgNameFilter.isNotEmpty && !orgName.toLowerCase().contains(orgNameFilter)) {
-        continue;
-      }
-
-      final query = _searchQuery.toLowerCase();
-      if (query.isNotEmpty && !actTitle.toLowerCase().contains(query) && !orgName.toLowerCase().contains(query)) {
-        continue;
-      }
-
-      final rawUrls = rep['file_urls'] ?? rep['report_url'] ?? rep['attachment_url'];
-      String? fileUrl;
-      if (rawUrls is List && rawUrls.isNotEmpty) {
-        fileUrl = rawUrls.first.toString();
-      } else if (rawUrls is String && rawUrls.isNotEmpty) {
-        fileUrl = rawUrls;
-      }
-
-      if (_selectedCategory == 'All' || _selectedCategory == 'Accomplishment') {
-        archivedDocs.add({
-          'type': 'Accomplishment Report',
-          'title': 'Accomplishment Report - $actTitle',
-          'org_name': orgName,
-          'date': rep['created_at']?.toString().split('T').first ?? 'SY $_schoolYear',
-          'color': const Color(0xFF0D9488),
-          'icon': Icons.assignment_turned_in_rounded,
-          'file_url': fileUrl,
-          'act': act,
-          'is_gpoa': false,
-        });
-      }
-    }
-
-    return Padding(
-      padding: const EdgeInsets.all(36),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: const Color(0xFF6366F1).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(16)),
-                    child: const Icon(Icons.folder_special_rounded, color: Color(0xFF6366F1), size: 28),
-                  ),
-                  const SizedBox(width: 16),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Digital Archives', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
-                      Text('Centralized repository of GPOAs, Accomplishment Reports, and Financial Proofs', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
-                    ],
-                  ),
-                ],
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade300)),
-                child: DropdownButton<String>(
-                  value: _schoolYear,
-                  underline: const SizedBox(),
-                  items: ['2024-2025', '2025-2026', '2026-2027'].map((sy) => DropdownMenuItem(value: sy, child: Text('SY $sy'))).toList(),
-                  onChanged: (val) {
-                    if (val != null) setState(() => _schoolYear = val);
-                  },
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 28),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  onChanged: (v) => setState(() => _searchQuery = v),
-                  decoration: InputDecoration(
-                    hintText: 'Search by document title, activity, or organization…',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Wrap(
-                spacing: 8,
-                children: ['All', 'GPOA', 'Accomplishment', 'Financial'].map((cat) {
-                  final isSel = _selectedCategory == cat;
-                  return ChoiceChip(
-                    label: Text(cat),
-                    selected: isSel,
-                    onSelected: (s) {
-                      if (s) setState(() => _selectedCategory = cat);
-                    },
-                    selectedColor: const Color(0xFF6366F1),
-                    labelStyle: TextStyle(color: isSel ? Colors.white : const Color(0xFF475569), fontWeight: FontWeight.bold),
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
-          const SizedBox(height: 28),
-          Expanded(
-            child: _isLoadingReports
-                ? const Center(child: CircularProgressIndicator())
-                : archivedDocs.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: const [
-                            Icon(Icons.inventory_2_outlined, size: 48, color: Color(0xFF94A3B8)),
-                            SizedBox(height: 12),
-                            Text('No archived documents match your criteria.', style: TextStyle(fontSize: 14, color: Color(0xFF64748B))),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        itemCount: archivedDocs.length,
-                        itemBuilder: (ctx, idx) {
-                          final doc = archivedDocs[idx];
-                          final Color col = doc['color'];
-                          final IconData icon = doc['icon'];
-                          final isGPOA = doc['is_gpoa'] == true;
-
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: Colors.grey.shade200),
-                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))],
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(color: col.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
-                                  child: Icon(icon, color: col, size: 24),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(doc['title'].toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1E293B))),
-                                      const SizedBox(height: 4),
-                                      Text('${doc['org_name']} • ${doc['date']}', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                                    ],
-                                  ),
-                                ),
-                                ElevatedButton.icon(
-                                  onPressed: () {
-                                    if (isGPOA && doc['acts'] != null) {
-                                      final actsList = List<Map<String, dynamic>>.from(doc['acts'] as List);
-                                      _openGPOADialog(actsList, doc['org_name'].toString());
-                                    } else if (doc['file_url'] != null && doc['file_url'].toString().isNotEmpty) {
-                                      AppUtils.showTopToast(context, 'Opening document URL: ${doc['file_url']}');
-                                    } else {
-                                      AppUtils.showTopToast(context, 'Viewing ${doc['title']}...');
-                                    }
-                                  },
-                                  icon: Icon(isGPOA ? Icons.picture_as_pdf_rounded : Icons.remove_red_eye_rounded, size: 16),
-                                  label: Text(isGPOA ? 'View GPOA' : 'View File'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: col,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _TimeFrameInput extends StatefulWidget {
   final TextEditingController controller;
 
@@ -4140,5 +3904,567 @@ class _TimeFrameInputState extends State<_TimeFrameInput> {
       selectedColor: const Color(0xFF6366F1),
       labelStyle: TextStyle(color: (_numberController.text == numStr && _unit == unit) ? Colors.white : const Color(0xFF475569)),
     );
+  }
+}
+
+class _ArchivesView extends StatefulWidget {
+  final List<Map<String, dynamic>> activities;
+  final Map<String, dynamic>? orgData;
+  final String userRole;
+
+  const _ArchivesView({
+    required this.activities,
+    this.orgData,
+    this.userRole = 'Admin',
+  });
+
+  @override
+  State<_ArchivesView> createState() => _ArchivesViewState();
+}
+
+class _ArchivesViewState extends State<_ArchivesView> {
+  String _searchQuery = '';
+  String _selectedCategory = 'All';
+  String _schoolYear = '2025-2026';
+  List<Map<String, dynamic>> _accomplishmentReports = [];
+  bool _isLoadingReports = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAccomplishmentReports();
+  }
+
+  Future<void> _fetchAccomplishmentReports() async {
+    try {
+      final currentOrgId = widget.orgData?['id']?.toString();
+      var query = Supabase.instance.client
+          .from('accomplishment_reports')
+          .select('*, activities(*)');
+
+      if (currentOrgId != null && currentOrgId.isNotEmpty) {
+        query = query.eq('organization_id', currentOrgId);
+      }
+
+      final res = await query;
+      if (mounted) {
+        setState(() {
+          _accomplishmentReports = List<Map<String, dynamic>>.from(res);
+          _isLoadingReports = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingReports = false);
+    }
+  }
+
+  void _openGPOADialog(List<Map<String, dynamic>> acts, String orgName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => GPOAPreviewDialog(
+        organization: widget.orgData ?? {'name': orgName, 'type': 'College Student Council'},
+        activities: acts,
+        president: const {'full_name': 'Student Leader'},
+        adviser: const {'full_name': 'Faculty Adviser'},
+        fileName: 'GPOA_${orgName.replaceAll(" ", "_")}.pdf',
+      ),
+    );
+  }
+
+  void _openAccomplishmentReportDialog(BuildContext context, Map<String, dynamic> doc) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AccomplishmentReportDetailsDialog(report: doc),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentOrgId = widget.orgData?['id']?.toString();
+    final orgNameFilter = widget.orgData != null ? (widget.orgData!['name'] ?? '').toString().toLowerCase().trim() : '';
+
+    final myActivities = widget.activities.where((act) {
+      final actOrgId = act['organization_id']?.toString();
+      if (currentOrgId != null && currentOrgId.isNotEmpty && actOrgId == currentOrgId) {
+        return true;
+      }
+      final actOrgName = (act['organization_name'] ?? act['organization']?['name'] ?? '').toString().toLowerCase().trim();
+      if (orgNameFilter.isNotEmpty && actOrgName == orgNameFilter) {
+        return true;
+      }
+      return false;
+    }).toList();
+
+    final archivedDocs = <Map<String, dynamic>>[];
+
+    // 1. Process GPOAs - EXACTLY 1 GPOA ENTRY PER ORGANIZATION
+    if (_selectedCategory == 'All' || _selectedCategory == 'GPOA') {
+      final Map<String, List<Map<String, dynamic>>> orgActsMap = {};
+      final Map<String, String> orgNamesMap = {};
+
+      for (var act in myActivities) {
+        final orgId = act['organization_id']?.toString() ?? widget.orgData?['id']?.toString() ?? 'unknown';
+        final orgName = (act['organization_name'] ?? widget.orgData?['name'] ?? 'Organization').toString();
+
+        orgNamesMap[orgId] = orgName;
+        orgActsMap.putIfAbsent(orgId, () => []).add(act);
+      }
+
+      orgActsMap.forEach((orgId, acts) {
+        final orgName = orgNamesMap[orgId] ?? 'Organization';
+
+        final query = _searchQuery.toLowerCase();
+        if (query.isNotEmpty && !orgName.toLowerCase().contains(query)) {
+          return;
+        }
+
+        archivedDocs.add({
+          'type': 'GPOA',
+          'title': 'Approved Annual GPOA - $orgName',
+          'org_name': orgName,
+          'date': 'SY $_schoolYear',
+          'color': const Color(0xFF4F46E5),
+          'icon': Icons.description_rounded,
+          'acts': acts,
+          'is_gpoa': true,
+        });
+      });
+    }
+
+    // 2. Process Approved Event Letters
+    for (var act in myActivities) {
+      final actTitle = (act['title'] ?? 'Untitled Activity').toString();
+      final orgName = (act['organization_name'] ?? widget.orgData?['name'] ?? 'Organization').toString();
+
+      final query = _searchQuery.toLowerCase();
+      if (query.isNotEmpty && !actTitle.toLowerCase().contains(query) && !orgName.toLowerCase().contains(query)) {
+        continue;
+      }
+
+      if (act['letter_url'] != null && act['letter_url'].toString().isNotEmpty) {
+        if (_selectedCategory == 'All' || _selectedCategory == 'Approved Letter') {
+          archivedDocs.add({
+            'type': 'Approved Letter',
+            'title': 'Approved Event Letter - $actTitle',
+            'org_name': orgName,
+            'date': act['proposed_date']?.toString().split('T').first ?? 'SY $_schoolYear',
+            'color': const Color(0xFF0284C7),
+            'icon': Icons.mark_as_unread_rounded,
+            'file_url': act['letter_url'],
+            'act': act,
+            'is_gpoa': false,
+          });
+        }
+      }
+    }
+
+    // 2. Process ONLY Approved Accomplishment Reports from Supabase
+    for (var rep in _accomplishmentReports) {
+      final repStatusLower = (rep['status'] ?? '').toString().toLowerCase();
+      final isReportApproved = ['approved', 'completed', 'verified', 'passed'].contains(repStatusLower);
+      if (!isReportApproved) continue;
+
+      final act = rep['activities'] ?? {};
+      final actTitle = (rep['title'] ?? act['title'] ?? 'Activity Report').toString();
+      final orgName = (rep['organization_name'] ?? widget.orgData?['name'] ?? 'Organization').toString();
+
+      final query = _searchQuery.toLowerCase();
+      if (query.isNotEmpty && !actTitle.toLowerCase().contains(query) && !orgName.toLowerCase().contains(query)) {
+        continue;
+      }
+
+      final rawUrls = rep['attachments'] ?? rep['file_urls'] ?? rep['report_url'] ?? rep['attachment_url'];
+      String? fileUrl;
+      if (rawUrls is List && rawUrls.isNotEmpty) {
+        fileUrl = rawUrls.first.toString();
+      } else if (rawUrls is String && rawUrls.isNotEmpty) {
+        fileUrl = rawUrls;
+      }
+
+      if (_selectedCategory == 'All' || _selectedCategory == 'Accomplishment Report') {
+        archivedDocs.add({
+          'type': 'Accomplishment Report',
+          'title': 'Accomplishment Report - $actTitle',
+          'org_name': orgName,
+          'date': rep['created_at']?.toString().split('T').first ?? 'SY $_schoolYear',
+          'color': const Color(0xFF0D9488),
+          'icon': Icons.assignment_turned_in_rounded,
+          'file_url': fileUrl,
+          'act': act,
+          'is_gpoa': false,
+        });
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(36),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: const Color(0xFF6366F1).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(16)),
+                    child: const Icon(Icons.folder_special_rounded, color: Color(0xFF6366F1), size: 28),
+                  ),
+                  const SizedBox(width: 16),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Digital Archives', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                      Text('Centralized repository of GPOAs, Accomplishment Reports, and Approved Letters', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+                    ],
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade300)),
+                child: DropdownButton<String>(
+                  value: _schoolYear,
+                  underline: const SizedBox(),
+                  items: ['2024-2025', '2025-2026', '2026-2027'].map((sy) => DropdownMenuItem(value: sy, child: Text('SY $sy'))).toList(),
+                  onChanged: (val) {
+                    if (val != null) setState(() => _schoolYear = val);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  onChanged: (v) => setState(() => _searchQuery = v),
+                  decoration: InputDecoration(
+                    hintText: 'Search by document title, activity, or organization…',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Wrap(
+                spacing: 8,
+                children: ['All', 'GPOA', 'Accomplishment Report', 'Approved Letter'].map((cat) {
+                  final isSel = _selectedCategory == cat;
+                  return ChoiceChip(
+                    label: Text(cat),
+                    selected: isSel,
+                    onSelected: (s) {
+                      if (s) setState(() => _selectedCategory = cat);
+                    },
+                    selectedColor: const Color(0xFF6366F1),
+                    labelStyle: TextStyle(color: isSel ? Colors.white : const Color(0xFF475569), fontWeight: FontWeight.bold),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+          Expanded(
+            child: _isLoadingReports
+                ? const Center(child: CircularProgressIndicator())
+                : archivedDocs.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(Icons.inventory_2_outlined, size: 48, color: Color(0xFF94A3B8)),
+                            SizedBox(height: 12),
+                            Text('No archived documents match your criteria.', style: TextStyle(fontSize: 14, color: Color(0xFF64748B))),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: archivedDocs.length,
+                        itemBuilder: (ctx, idx) {
+                          final doc = archivedDocs[idx];
+                          final Color col = doc['color'];
+                          final IconData icon = doc['icon'];
+                          final isGPOA = doc['is_gpoa'] == true;
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.grey.shade200),
+                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))],
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(color: col.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+                                  child: Icon(icon, color: col, size: 24),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(doc['title'].toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1E293B))),
+                                      const SizedBox(height: 4),
+                                      Text('${doc['org_name']} • ${doc['date']}', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                                    ],
+                                  ),
+                                ),
+                                ElevatedButton.icon(
+                                  onPressed: () async {
+                                    if (isGPOA && doc['acts'] != null) {
+                                      final actsList = List<Map<String, dynamic>>.from(doc['acts'] as List);
+                                      _openGPOADialog(actsList, doc['org_name'].toString());
+                                    } else if (doc['type'] == 'Accomplishment Report') {
+                                      _openAccomplishmentReportDialog(context, doc);
+                                    } else if (doc['file_url'] != null && doc['file_url'].toString().isNotEmpty) {
+                                      final urlStr = doc['file_url'].toString();
+                                      final Uri fileUri = Uri.parse(urlStr);
+                                      if (await canLaunchUrl(fileUri)) {
+                                        await launchUrl(fileUri, mode: LaunchMode.externalApplication);
+                                      } else if (context.mounted) {
+                                        AppUtils.showTopToast(context, 'Opening document: $urlStr');
+                                      }
+                                    } else {
+                                      AppUtils.showTopToast(context, 'Viewing ${doc['title']}...');
+                                    }
+                                  },
+                                  icon: Icon(isGPOA ? Icons.picture_as_pdf_rounded : Icons.remove_red_eye_rounded, size: 16),
+                                  label: Text(isGPOA ? 'View GPOA' : 'View File'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: col,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+
+class AccomplishmentReportDetailsDialog extends StatelessWidget {
+  final Map<String, dynamic> report;
+
+  const AccomplishmentReportDetailsDialog({super.key, required this.report});
+
+  @override
+  Widget build(BuildContext context) {
+    final title = report['title']?.toString() ?? 'Accomplishment Report';
+    final orgName = report['org_name']?.toString() ?? 'Organization';
+    final date = report['date']?.toString() ?? 'SY 2025-2026';
+    final summary = report['summary']?.toString() ?? report['description']?.toString() ?? 'Submitted Accomplishment Report';
+    final act = report['act'] as Map<String, dynamic>? ?? {};
+
+    final attachments = <String>[];
+    if (report['file_url'] != null && report['file_url'].toString().isNotEmpty) {
+      attachments.add(report['file_url'].toString());
+    }
+    final rawAttach = report['attachments'] ?? act['attachments'] ?? act['report_url'];
+    if (rawAttach is List) {
+      attachments.addAll(rawAttach.map((e) => e.toString()).where((e) => e.isNotEmpty));
+    } else if (rawAttach is String && rawAttach.isNotEmpty) {
+      if (!attachments.contains(rawAttach)) attachments.add(rawAttach);
+    }
+
+    final uniqueAttachments = attachments.toSet().toList();
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Container(
+        width: 700,
+        constraints: const BoxConstraints(maxHeight: 700),
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: const Color(0xFF0D9488).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(16)),
+                      child: const Icon(Icons.assignment_turned_in_rounded, color: Color(0xFF0D9488), size: 28),
+                    ),
+                    const SizedBox(width: 16),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                        Text('$orgName • $date', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 22, color: Color(0xFF64748B)),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const Divider(height: 28),
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFE2E8F0))),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: const [
+                              Icon(Icons.notes_rounded, size: 18, color: Color(0xFF0D9488)),
+                              SizedBox(width: 10),
+                              Text('ACCOMPLISHMENT SUMMARY & HIGHLIGHTS', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF0D9488), letterSpacing: 1)),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            summary.trim().isEmpty ? 'Accomplishment report submitted and verified.' : summary,
+                            style: const TextStyle(fontSize: 14, color: Color(0xFF334155), height: 1.5),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    const Text('Attached Narrative Reports & Proofs', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+                    const SizedBox(height: 12),
+                    if (uniqueAttachments.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
+                        child: Row(
+                          children: const [
+                            Icon(Icons.insert_drive_file_outlined, color: Colors.grey, size: 20),
+                            SizedBox(width: 10),
+                            Text('Narrative report verified on record.', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                          ],
+                        ),
+                      )
+                    else
+                      Column(
+                        children: uniqueAttachments.map((fileUrl) {
+                          final fileName = fileUrl.split('/').last.split('?').first;
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.grey.shade200)),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.picture_as_pdf_rounded, color: Color(0xFF0D9488), size: 22),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    fileName,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E293B)),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                ElevatedButton.icon(
+                                  onPressed: () async {
+                                    final Uri fileUri = Uri.parse(fileUrl);
+                                    if (await canLaunchUrl(fileUri)) {
+                                      await launchUrl(fileUri, mode: LaunchMode.externalApplication);
+                                    } else if (context.mounted) {
+                                      AppUtils.showTopToast(context, 'Opening file: $fileUrl');
+                                    }
+                                  },
+                                  icon: const Icon(Icons.open_in_new_rounded, size: 14),
+                                  label: const Text('Open File'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF0D9488),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+Future<void> _adviserDecision(BuildContext context, Map<String, dynamic> activity, String s, VoidCallback onRefresh) async {
+  final status = s == 'Approved' ? 'Endorsed' : s; // the widget's "approve" means endorse for advisers
+  String? remarks;
+  if (status == 'Needs Revision' || status == 'Rejected') {
+    final c = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(status == 'Rejected' ? 'Reject GPOA' : 'Return for Revision'),
+        content: TextField(controller: c, maxLines: 4, decoration: const InputDecoration(labelText: 'Remarks *', border: OutlineInputBorder())),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () { if (c.text.trim().isNotEmpty) Navigator.pop(ctx, true); }, child: const Text('Send')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    remarks = c.text.trim();
+  }
+  try {
+    await Supabase.instance.client.from('activities').update({
+      'status': status,
+      'remarks': remarks,
+      'revision_by': status == 'Needs Revision' ? 'Adviser' : null,
+    }).eq('id', activity['id']);
+
+    final orgId = activity['organization_id']?.toString();
+    if (status == 'Endorsed') {
+      AppUtils.sendNotification(title: 'GPOA Endorsed ✅', body: '"${activity['title']}" was endorsed and awaits your review.', recipientRole: 'admin', organizationId: orgId);
+    } else {
+      AppUtils.sendNotification(title: status == 'Rejected' ? 'GPOA Rejected' : 'GPOA Needs Revision', body: '"${activity['title']}": see the adviser remarks.', recipientRole: 'president', organizationId: orgId);
+    }
+    if (context.mounted) {
+      AppUtils.showTopToast(context, status == 'Endorsed' ? 'GPOA endorsed.' : 'Feedback sent.');
+      Navigator.pop(context);
+      onRefresh();
+    }
+  } catch (e) {
+    if (context.mounted) AppUtils.showTopToast(context, 'Error: $e', isError: true);
   }
 }

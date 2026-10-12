@@ -161,7 +161,7 @@ class GPOAActivityDetailsView extends StatelessWidget {
                     _InfoBlock(label: 'BUDGET ALLOCATION', value: budget, icon: Icons.payments_rounded, isHighlight: true),
                   ],
                 ),
-                if (proposedDate != null) ...[
+                if (proposedDate != null && proposedDate!.trim().isNotEmpty && proposedDate != 'Not set' && proposedDate != createdAt) ...[
                   const _Divider(),
                   _GPOAGridSection(
                     title: 'SCHEDULING',

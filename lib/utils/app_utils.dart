@@ -1,6 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AppUtils {
+  static Future<void> sendNotification({
+    required String title,
+    required String body,
+    String recipientRole = 'all',
+    String? recipientId,
+    String? organizationId,
+    String status = 'unread',
+  }) async {
+    try {
+      await Supabase.instance.client.from('notifications').insert({
+        'title': title,
+        'body': body,
+        'status': status,
+        'recipient_role': recipientRole,
+        'recipient_id': recipientId,
+        'organization_id': organizationId,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      debugPrint('Notification dispatch notice: $e');
+    }
+  }
+
   static String formatDateTime(dynamic dateStr) {
     if (dateStr == null) return 'Not set';
     try {
@@ -21,46 +45,75 @@ class AppUtils {
   }
 
   static void showTopToast(BuildContext context, String message, {bool isError = false}) {
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    scaffoldMessenger.clearSnackBars();
-    scaffoldMessenger.showSnackBar(
-      SnackBar(
-        content: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                isError ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
-                color: Colors.white,
-                size: 20,
+    try {
+      final overlay = Overlay.of(context, rootOverlay: true);
+
+      late OverlayEntry entry;
+      entry = OverlayEntry(
+        builder: (ctx) => Positioned(
+          top: 24,
+          left: MediaQuery.of(context).size.width > 800
+              ? MediaQuery.of(context).size.width * 0.2
+              : 16,
+          right: MediaQuery.of(context).size.width > 800
+              ? MediaQuery.of(context).size.width * 0.2
+              : 16,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              decoration: BoxDecoration(
+                color: isError ? const Color(0xFFDC2626) : const Color(0xFF6366F1),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.25),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+                border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 1),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  message,
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white),
-                ),
+              child: Row(
+                children: [
+                  Icon(
+                    isError ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Text(
+                      message,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: isError ? const Color(0xFFEF4444) : const Color(0xFF6366F1),
-        duration: const Duration(seconds: 4),
-        dismissDirection: DismissDirection.up,
-        margin: EdgeInsets.only(
-          bottom: MediaQuery.of(context).size.height - 100,
-          left: MediaQuery.of(context).size.width * 0.25,
-          right: MediaQuery.of(context).size.width * 0.25,
+      );
+
+      overlay.insert(entry);
+
+      Future.delayed(const Duration(seconds: 4), () {
+        try {
+          entry.remove();
+        } catch (_) {}
+      });
+    } catch (_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: isError ? const Color(0xFFDC2626) : const Color(0xFF6366F1),
         ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: Colors.white.withValues(alpha: 0.2), width: 1),
-        ),
-        elevation: 8,
-      ),
-    );
+      );
+    }
   }
 
   static Duration parseDuration(dynamic timeFrame) {
@@ -68,7 +121,7 @@ class AppUtils {
       return const Duration(hours: 4);
     }
     final str = timeFrame.toString().toUpperCase();
-    
+
     // Check for time range like "08:00 AM - 10:00 AM"
     final rangeRegex = RegExp(r'(\d{1,2}:\d{2}\s?[AP]M)\s?-\s?(\d{1,2}:\d{2}\s?[AP]M)');
     final rangeMatch = rangeRegex.firstMatch(str);
@@ -76,17 +129,17 @@ class AppUtils {
       try {
         final startStr = rangeMatch.group(1)!;
         final endStr = rangeMatch.group(2)!;
-        
+
         final start = _parseTimeOfDay(startStr);
         final end = _parseTimeOfDay(endStr);
-        
+
         int startMinutes = start.hour * 60 + start.minute;
         int endMinutes = end.hour * 60 + end.minute;
-        
+
         if (endMinutes < startMinutes) {
           endMinutes += 24 * 60; // Next day
         }
-        
+
         return Duration(minutes: endMinutes - startMinutes);
       } catch (_) {}
     }
@@ -101,16 +154,32 @@ class AppUtils {
     }
     return const Duration(hours: 4);
   }
+  /// True only when the event was approved (Scheduled) and its end time has
+  /// passed, or it is already marked Completed. Used to gate report submission.
+  static bool isEventDone(Map<String, dynamic> a) {
+    final s = (a['status'] ?? '').toString();
+    if (s == 'Completed') return true;
+    if (s != 'Scheduled') return false;
+    final raw = a['proposed_date']?.toString() ?? '';
+    if (raw.trim().isEmpty) return false;
+    try {
+      final start = DateTime.parse(raw).toLocal();
+      final end = start.add(parseDuration(a['time_frame']));
+      return end.isBefore(DateTime.now());
+    } catch (_) {
+      return false;
+    }
+  }
 
   static TimeOfDay _parseTimeOfDay(String timeStr) {
     final parts = timeStr.split(RegExp(r'[:\s]'));
     int hour = int.parse(parts[0]);
     int minute = int.parse(parts[1]);
     final amPm = parts.last.toUpperCase();
-    
+
     if (amPm == 'PM' && hour != 12) hour += 12;
     if (amPm == 'AM' && hour == 12) hour = 0;
-    
+
     return TimeOfDay(hour: hour, minute: minute);
   }
 

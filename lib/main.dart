@@ -2,15 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:csuatlasf/admin_dashboard.dart';
 import 'package:csuatlasf/org_dashboard.dart';
+import 'package:csuatlasf/account_settings_page.dart';
 import 'package:csuatlasf/utils/app_utils.dart';
+
+/// true = always show the login form when the app starts (saved session is cleared)
+/// false = stay signed in and jump straight to the dashboard for the saved role
+const bool kAlwaysRequireLogin = true;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // The publishable key is meant to be public. Your data is protected by RLS.
   await Supabase.initialize(
     url: 'https://lriowumebzpwxlgcided.supabase.co',
     anonKey: 'sb_publishable_oGW_4BK6w8bxfDj7JHm9Tw_Ez5eCVEJ',
   );
+
+  if (kAlwaysRequireLogin) {
+    try {
+      await Supabase.instance.client.auth.signOut();
+    } catch (_) {
+      // Ignore: offline or no session. The login page will still be shown.
+    }
+  }
 
   runApp(const MyApp());
 }
@@ -33,6 +47,7 @@ class MyApp extends StatelessWidget {
         '/': (context) => const LoginPage(),
         '/dashboard': (context) => const AdminDashboard(),
         '/org_dashboard': (context) => const OrgDashboard(),
+        '/account': (context) => const AccountSettingsPage(),
       },
     );
   }
@@ -52,61 +67,102 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
 
-  void _handleLogin() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() {
-        _isLoading = true;
-      });
+  @override
+  void initState() {
+    super.initState();
+    if (!kAlwaysRequireLogin) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _redirectIfSignedIn());
+    }
+  }
 
-      try {
-        final response = await Supabase.instance.client.auth.signInWithPassword(
-          email: _usernameController.text.contains('@') 
-              ? _usernameController.text 
-              : '${_usernameController.text}@csu.edu.ph', // Support both username and email
-          password: _passwordController.text,
-        );
+  /// Maps a profile role to its dashboard route. Returns null for unknown roles.
+  String? _routeForRole(String? role) {
+    switch (role) {
+      case 'Admin':
+        return '/dashboard';
+      case 'President':
+      case 'Adviser':
+        return '/org_dashboard';
+      default:
+        return null;
+    }
+  }
 
-        if (response.user != null) {
-          // Fetch user profile to check role
-          final profileData = await Supabase.instance.client
-              .from('profiles')
-              .select('role')
-              .eq('id', response.user!.id);
+  /// If a valid session already exists (app reopened), skip the login form.
+  Future<void> _redirectIfSignedIn() async {
+    final client = Supabase.instance.client;
+    final user = client.auth.currentUser;
+    if (user == null) return;
+    try {
+      final profile = await client
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle();
 
-          if (mounted) {
-            if (profileData.isNotEmpty) {
-              final profile = profileData.first;
-              if (profile['role'] == 'Admin') {
-                AppUtils.showTopToast(context, 'Login successful! Welcome Admin.');
-                Navigator.pushReplacementNamed(context, '/dashboard');
-              } else if (profile['role'] == 'President' || profile['role'] == 'Adviser') {
-                AppUtils.showTopToast(context, 'Login successful! Welcome to the portal.');
-                Navigator.pushReplacementNamed(context, '/org_dashboard');
-              } else {
-                AppUtils.showTopToast(context, 'Access denied: Unauthorized role.', isError: true);
-                await Supabase.instance.client.auth.signOut();
-              }
-            } else {
-              AppUtils.showTopToast(context, 'Profile not found. Please contact an administrator.', isError: true);
-              await Supabase.instance.client.auth.signOut();
-            }
-          }
-        }
-      } on AuthException catch (error) {
-        if (mounted) {
-          AppUtils.showTopToast(context, error.message, isError: true);
-        }
-      } catch (error) {
-        if (mounted) {
-          AppUtils.showTopToast(context, 'Error: $error', isError: true);
-        }
-      } finally {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
+      final route = _routeForRole(profile?['role']?.toString());
+      if (!mounted) return;
+      if (route != null) {
+        Navigator.pushReplacementNamed(context, route);
+      } else {
+        await client.auth.signOut();
       }
+    } catch (_) {
+      // Stay on the login page if the check fails.
+    }
+  }
+
+  Future<void> _handleLogin() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isLoading = true);
+
+    final input = _usernameController.text.trim().toLowerCase();
+    final password = _passwordController.text; // do not trim passwords
+    final email = input.contains('@') ? input : '$input@csu.edu.ph';
+    final client = Supabase.instance.client;
+
+    try {
+      final response = await client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+      final user = response.user;
+      if (user == null) throw const AuthException('Invalid login credentials.');
+
+      // Runs as the signed-in user, so RLS can restrict this to their own row.
+      final profile = await client
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      final role = profile?['role']?.toString();
+      final route = _routeForRole(role);
+      if (!mounted) return;
+
+      if (route == null) {
+        await client.auth.signOut();
+        if (mounted) {
+          AppUtils.showTopToast(context, 'Access denied: Unauthorized role.', isError: true);
+        }
+        return;
+      }
+
+      AppUtils.showTopToast(
+        context,
+        role == 'Admin' ? 'Login successful! Welcome Admin.' : 'Login successful! Welcome to the portal.',
+      );
+      Navigator.pushReplacementNamed(context, route);
+    } on AuthException {
+      if (mounted) {
+        AppUtils.showTopToast(context, 'Invalid email/username or password.', isError: true);
+      }
+    } catch (_) {
+      if (mounted) {
+        AppUtils.showTopToast(context, 'Something went wrong. Please try again.', isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -132,7 +188,6 @@ class _LoginPageState extends State<LoginPage> {
         ),
         child: Stack(
           children: [
-            // Decorative Blobs
             Positioned(
               top: -100,
               right: -100,
@@ -162,79 +217,101 @@ class _LoginPageState extends State<LoginPage> {
                   borderRadius: BorderRadius.circular(32),
                   boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 40, offset: const Offset(0, 20))],
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 1,
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(60.0),
-                        child: Form(
-                          key: _formKey,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Welcome Back', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: Color(0xFF1E293B), letterSpacing: -0.5)),
-                              const SizedBox(height: 8),
-                              Text('Please enter your details to sign in', style: TextStyle(color: Colors.grey[600], fontSize: 16)),
-                              const SizedBox(height: 48),
-                              _buildInputField(controller: _usernameController, label: 'Email or Username', icon: Icons.person_outline, validator: (v) => v == null || v.isEmpty ? 'Required' : null),
-                              const SizedBox(height: 20),
-                              _buildInputField(controller: _passwordController, label: 'Password', icon: Icons.lock_outline, isPassword: true, obscureText: _isPasswordObscured, onToggle: () => setState(() => _isPasswordObscured = !_isPasswordObscured), validator: (v) => v == null || v.isEmpty ? 'Required' : null),
-                              const SizedBox(height: 32),
-                              SizedBox(
-                                width: double.infinity,
-                                height: 56,
-                                child: ElevatedButton(
-                                  onPressed: _isLoading ? null : _handleLogin,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF6366F1),
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                    elevation: 0,
-                                  ),
-                                  child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('Sign In', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                child: LayoutBuilder(builder: (context, constraints) {
+                  final showSidePanel = constraints.maxWidth >= 700;
+                  return Row(
+                    children: [
+                      Expanded(
+                        flex: 1,
+                        child: SingleChildScrollView(
+                          padding: EdgeInsets.all(showSidePanel ? 60.0 : 28.0),
+                          child: Form(
+                            key: _formKey,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Welcome Back', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: Color(0xFF1E293B), letterSpacing: -0.5)),
+                                const SizedBox(height: 8),
+                                Text('Please enter your details to sign in', style: TextStyle(color: Colors.grey[600], fontSize: 16)),
+                                const SizedBox(height: 48),
+                                _buildInputField(
+                                  controller: _usernameController,
+                                  label: 'Email or Username',
+                                  icon: Icons.person_outline,
+                                  validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 20),
+                                _buildInputField(
+                                  controller: _passwordController,
+                                  label: 'Password',
+                                  icon: Icons.lock_outline,
+                                  isPassword: true,
+                                  obscureText: _isPasswordObscured,
+                                  onToggle: () => setState(() => _isPasswordObscured = !_isPasswordObscured),
+                                  validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                                  onSubmitted: (_) {
+                                    if (!_isLoading) _handleLogin();
+                                  },
+                                ),
+                                const SizedBox(height: 44),
+                                SizedBox(
+                                  width: double.infinity,
+                                  height: 56,
+                                  child: ElevatedButton(
+                                    onPressed: _isLoading ? null : _handleLogin,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF6366F1),
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                      elevation: 0,
+                                    ),
+                                    child: _isLoading
+                                        ? const CircularProgressIndicator(color: Colors.white)
+                                        : const Text('Sign In', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    Expanded(
-                      flex: 1,
-                      child: Container(
-                        padding: const EdgeInsets.all(60),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(begin: Alignment.bottomLeft, end: Alignment.topRight, colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)]),
+                      if (showSidePanel)
+                        Expanded(
+                          flex: 1,
+                          child: Container(
+                            padding: const EdgeInsets.all(60),
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(begin: Alignment.bottomLeft, end: Alignment.topRight, colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)]),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(20),
+                                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                                  child: Image.asset('assets/images/csulogo.png', width: 80, height: 80),
+                                ),
+                                const SizedBox(height: 32),
+                                const Text('ATLAS', style: TextStyle(fontSize: 48, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 2)),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'A Centralized Activity Tracking, Liaison and Archiving System for Student Organizations.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(fontSize: 16, color: Colors.white.withValues(alpha: 0.8), height: 1.6),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  'CSU LAL-LO PORTAL',
+                                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontWeight: FontWeight.bold, letterSpacing: 1.5, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                              child: Image.asset('assets/images/csulogo.png', width: 80, height: 80),
-                            ),
-                            const SizedBox(height: 32),
-                            const Text('ATLAS', style: TextStyle(fontSize: 48, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 2)),
-                            const SizedBox(height: 16),
-                            Text(
-                              'A Centralized Activity Tracking, Liaison and Archiving System for Student Organizations.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 16, color: Colors.white.withValues(alpha: 0.8), height: 1.6),
-                            ),
-                            const Spacer(),
-                            Text(
-                              'CSU LAL-LO PORTAL',
-                              style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontWeight: FontWeight.bold, letterSpacing: 1.5, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                    ],
+                  );
+                }),
               ),
             ),
           ],
@@ -243,15 +320,30 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _buildInputField({required TextEditingController controller, required String label, required IconData icon, bool isPassword = false, bool obscureText = false, VoidCallback? onToggle, String? Function(String?)? validator}) {
+  Widget _buildInputField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    bool isPassword = false,
+    bool obscureText = false,
+    VoidCallback? onToggle,
+    String? Function(String?)? validator,
+    void Function(String)? onSubmitted,
+  }) {
     return TextFormField(
       controller: controller,
       obscureText: obscureText,
       validator: validator,
+      onFieldSubmitted: onSubmitted,
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, size: 20),
-        suffixIcon: isPassword ? IconButton(icon: Icon(obscureText ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20), onPressed: onToggle) : null,
+        suffixIcon: isPassword
+            ? IconButton(
+          icon: Icon(obscureText ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20),
+          onPressed: onToggle,
+        )
+            : null,
         filled: true,
         fillColor: Colors.grey[50],
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
