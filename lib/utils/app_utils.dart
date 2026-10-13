@@ -116,46 +116,40 @@ class AppUtils {
     }
   }
 
-  static Duration parseDuration(dynamic timeFrame) {
-    if (timeFrame == null || timeFrame.toString().isEmpty) {
-      return const Duration(hours: 4);
-    }
-    final str = timeFrame.toString().toUpperCase();
-
-    // Check for time range like "08:00 AM - 10:00 AM"
-    final rangeRegex = RegExp(r'(\d{1,2}:\d{2}\s?[AP]M)\s?-\s?(\d{1,2}:\d{2}\s?[AP]M)');
-    final rangeMatch = rangeRegex.firstMatch(str);
-    if (rangeMatch != null) {
-      try {
-        final startStr = rangeMatch.group(1)!;
-        final endStr = rangeMatch.group(2)!;
-
-        final start = _parseTimeOfDay(startStr);
-        final end = _parseTimeOfDay(endStr);
-
-        int startMinutes = start.hour * 60 + start.minute;
-        int endMinutes = end.hour * 60 + end.minute;
-
-        if (endMinutes < startMinutes) {
-          endMinutes += 24 * 60; // Next day
-        }
-
-        return Duration(minutes: endMinutes - startMinutes);
-      } catch (_) {}
-    }
-
-    final numberRegex = RegExp(r'(\d*\.?\d+)');
-    final match = numberRegex.firstMatch(str.toLowerCase());
-    if (match != null) {
-      final value = double.tryParse(match.group(1)!) ?? 4.0;
-      if (str.toLowerCase().contains('min')) return Duration(minutes: value.toInt());
-      if (str.toLowerCase().contains('day')) return Duration(minutes: (value * 24 * 60).toInt());
-      return Duration(minutes: (value * 60).toInt());
-    }
-    return const Duration(hours: 4);
+  static Duration parseDuration(dynamic raw) {
+    final text = (raw ?? '').toString().toLowerCase();
+    final m = RegExp(r'(\d*\.?\d+)').firstMatch(text);
+    if (m == null) return const Duration(hours: 4);
+    final n = double.tryParse(m.group(1)!) ?? 4.0;
+    if (text.contains('min')) return Duration(minutes: n.round());
+    if (text.contains('day')) return Duration(minutes: (n * 10 * 60).round());
+    return Duration(minutes: (n * 60).round());
   }
-  /// True only when the event was approved (Scheduled) and its end time has
-  /// passed, or it is already marked Completed. Used to gate report submission.
+
+  static String _clock(DateTime d) {
+    final hour12 = d.hour % 12 == 0 ? 12 : d.hour % 12;
+    final minutes = d.minute.toString().padLeft(2, '0');
+    return '$hour12:$minutes ${d.hour < 12 ? 'AM' : 'PM'}';
+  }
+
+  ///  "Jan 5, 2026, 8:00 AM – 10:00 AM"
+  /// If the end falls on another day, the end date is shown too.
+  static String formatEventRange(dynamic proposedDate, dynamic timeFrame) {
+    if (proposedDate == null || proposedDate.toString().trim().isEmpty) return 'Not set';
+    try {
+      final start = DateTime.parse(proposedDate.toString()).toLocal();
+      final end = start.add(parseDuration(timeFrame));
+      final sameDay = start.year == end.year && start.month == end.month && start.day == end.day;
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      final endText = sameDay
+          ? _clock(end)
+          : '${months[end.month - 1]} ${end.day}, ${end.year}, ${_clock(end)}';
+      return '${formatDateTime(proposedDate)} – $endText';
+    } catch (_) {
+      return formatDateTime(proposedDate);
+    }
+  }
+
   static bool isEventDone(Map<String, dynamic> a) {
     final s = (a['status'] ?? '').toString();
     if (s == 'Completed') return true;
@@ -169,18 +163,6 @@ class AppUtils {
     } catch (_) {
       return false;
     }
-  }
-
-  static TimeOfDay _parseTimeOfDay(String timeStr) {
-    final parts = timeStr.split(RegExp(r'[:\s]'));
-    int hour = int.parse(parts[0]);
-    int minute = int.parse(parts[1]);
-    final amPm = parts.last.toUpperCase();
-
-    if (amPm == 'PM' && hour != 12) hour += 12;
-    if (amPm == 'AM' && hour == 12) hour = 0;
-
-    return TimeOfDay(hour: hour, minute: minute);
   }
 
   static String formatTimeFrame(dynamic timeFrame) {

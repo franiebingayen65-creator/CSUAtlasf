@@ -5,14 +5,14 @@ import 'package:csuatlasf/org_dashboard.dart';
 import 'package:csuatlasf/account_settings_page.dart';
 import 'package:csuatlasf/utils/app_utils.dart';
 
-/// true = always show the login form when the app starts (saved session is cleared)
-/// false = stay signed in and jump straight to the dashboard for the saved role
+
+
 const bool kAlwaysRequireLogin = true;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // The publishable key is meant to be public. Your data is protected by RLS.
+
   await Supabase.initialize(
     url: 'https://lriowumebzpwxlgcided.supabase.co',
     anonKey: 'sb_publishable_oGW_4BK6w8bxfDj7JHm9Tw_Ez5eCVEJ',
@@ -129,7 +129,7 @@ class _LoginPageState extends State<LoginPage> {
       final user = response.user;
       if (user == null) throw const AuthException('Invalid login credentials.');
 
-      // Runs as the signed-in user, so RLS can restrict this to their own row.
+
       final profile = await client
           .from('profiles')
           .select('role')

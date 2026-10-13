@@ -21,7 +21,7 @@ class GPOAPreviewDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Standard Folio (Long Bond Paper) 8.5" x 13"
+
     final folioFormat = PdfPageFormat(8.5 * PdfPageFormat.inch, 13.0 * PdfPageFormat.inch).landscape;
 
     return Dialog(
