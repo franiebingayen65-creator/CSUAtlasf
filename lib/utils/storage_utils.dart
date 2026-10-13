@@ -8,7 +8,7 @@ class StorageUtils {
   static const bucket = 'documents';
   static SupabaseClient get _c => Supabase.instance.client;
 
-  /// Uploads bytes and returns the storage path to save in the DB.
+
   static Future<String> upload(String folder, String fileName, Uint8List bytes) async {
     final safe = fileName.replaceAll(RegExp(r'[^\w.\-]'), '_');
     final path = '$folder/${DateTime.now().millisecondsSinceEpoch}_$safe';
@@ -41,18 +41,16 @@ class StorageUtils {
 
 /// Calls Edge Functions that use the service-role key server-side.
 class UserAdminService {
-  static SupabaseClient get _c => Supabase.instance.client;
+  static final _client = Supabase.instance.client;
 
-  static Future<void> _call(String fn, Map<String, dynamic> body) async {
+  static Future<Map<String, dynamic>> _call(Map<String, dynamic> body) async {
     try {
-      final res = await _c.functions.invoke(fn, body: body);
-      if (res.status >= 300) {
-        final d = res.data;
-        throw Exception(d is Map && d['error'] != null ? d['error'] : 'Request failed (${res.status})');
-      }
+      final res = await _client.functions.invoke('admin-users', body: body);
+      final data = res.data;
+      return data is Map ? Map<String, dynamic>.from(data) : {};
     } on FunctionException catch (e) {
       final d = e.details;
-      throw Exception(d is Map && d['error'] != null ? d['error'].toString() : 'Request failed (${e.status})');
+      throw Exception(d is Map && d['error'] != null ? d['error'] : 'Request failed (${e.status})');
     }
   }
 
@@ -62,17 +60,30 @@ class UserAdminService {
     required String password,
     required String role,
     String? organizationId,
-  }) =>
-      _call('admin-create-user', {
-        'fullName': fullName,
-        'email': email,
-        'password': password,
-        'role': role,
-        'organizationId': organizationId,
-      });
+  }) => _call({
+    'action': 'create',
+    'fullName': fullName,
+    'email': email,
+    'password': password,
+    'role': role,
+    'organizationId': organizationId,
+  });
 
-  static Future<void> deleteUser(String userId) => _call('admin-delete-user', {'userId': userId});
+  static Future<void> deleteUser(String id) =>
+      _call({'action': 'delete', 'userId': id});
 
-  static Future<void> resetPassword(String userId, String newPassword) =>
-      _call('admin-reset-password', {'userId': userId, 'newPassword': newPassword});
+  static Future<void> resetPassword(String id, String password) =>
+      _call({'action': 'reset_password', 'userId': id, 'password': password});
+
+  static Future<void> updateAccount({
+    required String id,
+    required String fullName,
+    required String email,
+  }) => _call({
+    'action': 'update_account',
+    'userId': id,
+    'fullName': fullName,
+    'email': email,
+  });
+
 }

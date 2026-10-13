@@ -39,46 +39,21 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     super.dispose();
   }
 
-  // ---------------- CHANGE PASSWORD ----------------
   Future<void> _changePassword() async {
     if (!_pwFormKey.currentState!.validate()) return;
     setState(() => _pwLoading = true);
 
     try {
-      final user = _client.auth.currentUser;
-      final newPw = _newPwController.text.trim();
+      final newPw = _newPwController.text;
 
-      // 1. Confirm the current password is correct
-      if (_currentEmail.isNotEmpty) {
-        try {
-          await _client.auth.signInWithPassword(
-            email: _currentEmail,
-            password: _currentPwController.text.trim(),
-          );
-        } catch (_) {}
-      }
-
-      // 2. Set the new password in Supabase Authentication
-      await _client.auth.updateUser(
-        UserAttributes(password: newPw),
+      // Verify current password (throws AuthException if wrong)
+      await _client.auth.signInWithPassword(
+        email: _currentEmail,
+        password: _currentPwController.text,
       );
 
-      if (user != null) {
-        try {
-          await _client.auth.admin.updateUserById(
-            user.id,
-            attributes: AdminUserAttributes(password: newPw, emailConfirm: true),
-          );
-        } catch (_) {}
+      await _client.auth.updateUser(UserAttributes(password: newPw));
 
-        try {
-          await _client.from('profiles').update({
-            'updated_at': DateTime.now().toIso8601String(),
-          }).eq('id', user.id);
-        } catch (_) {}
-      }
-
-      // 3. Log out the user's other devices/sessions
       try {
         await _client.auth.signOut(scope: SignOutScope.others);
       } catch (_) {}
@@ -108,43 +83,20 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
 
     try {
       final newEmail = _newEmailController.text.trim().toLowerCase();
-      final user = _client.auth.currentUser;
 
-      // 1. Confirm current password
-      if (_currentEmail.isNotEmpty) {
-        try {
-          await _client.auth.signInWithPassword(
-            email: _currentEmail,
-            password: _emailPwController.text.trim(),
-          );
-        } catch (_) {}
-      }
+      await _client.auth.signInWithPassword(
+        email: _currentEmail,
+        password: _emailPwController.text,
+      );
 
-      // 2. Request email change in Supabase Auth & profiles table
       await _client.auth.updateUser(UserAttributes(email: newEmail));
-
-      if (user != null) {
-        try {
-          await _client.auth.admin.updateUserById(
-            user.id,
-            attributes: AdminUserAttributes(email: newEmail, emailConfirm: true),
-          );
-        } catch (_) {}
-
-        try {
-          await _client.from('profiles').update({
-            'email': newEmail,
-            'updated_at': DateTime.now().toIso8601String(),
-          }).eq('id', user.id);
-        } catch (_) {}
-      }
 
       if (!mounted) return;
       _emailPwController.clear();
       _newEmailController.clear();
       AppUtils.showTopToast(
         context,
-        'Email address updated successfully to $newEmail!',
+        'Confirmation sent to $newEmail. Your email changes once you confirm it.',
       );
     } on AuthException catch (e) {
       if (!mounted) return;
@@ -158,7 +110,6 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
       if (mounted) setState(() => _emailLoading = false);
     }
   }
-
   // ---------------- UI ----------------
   InputDecoration _dec(String label, IconData icon) => InputDecoration(
         labelText: label,
