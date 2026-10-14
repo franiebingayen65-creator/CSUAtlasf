@@ -15,6 +15,7 @@
       import 'package:csuatlasf/widgets/admin_ui_kit.dart';
       import 'package:csuatlasf/widgets/admin_shell.dart';
 
+
       class AdminDashboard extends StatefulWidget {
         const AdminDashboard({super.key});
         @override
@@ -28,43 +29,67 @@
         String? _eventsOpenId;
         int _eventsNavToken = 0;
         bool _isLoading = true;
+        bool _isVerified = false;
         final String _searchQuery = '';
         List<Map<String, dynamic>> _organizations = [];
         List<Map<String, dynamic>> _activities = [];
         List<Map<String, dynamic>> _profiles = [];
+        Timer? _autoCompleteTimer;
         final List<StreamSubscription> _subscriptions = [];
 
         @override
         void initState() {
           super.initState();
           _verifyAdmin();
-          _setupRealtimeSubscriptions();
-          _fetchInitialData();
         }
+
 
         Future<void> _verifyAdmin() async {
           final user = _supabase.auth.currentUser;
           if (user == null) {
-            if (mounted) Navigator.pushReplacementNamed(context, '/');
+            _redirectToLogin();
             return;
           }
+
           try {
             final p = await _supabase
                 .from('profiles')
                 .select('role')
                 .eq('id', user.id)
                 .maybeSingle();
+
             if (p?['role'] != 'Admin') {
               await _supabase.auth.signOut();
-              if (mounted) Navigator.pushReplacementNamed(context, '/');
+              _redirectToLogin();
+              return;
             }
+
+            if (!mounted) return;
+            setState(() => _isVerified = true);
+
+            // Start loading data only after the role is confirmed
+            _setupRealtimeSubscriptions();
+            await _fetchInitialData();
+
+            _autoCompleteTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+              if (mounted) {
+                _checkAndReportAutoCompletion();
+                setState(() {});
+              }
+            });
           } catch (_) {
-            if (mounted) Navigator.pushReplacementNamed(context, '/');
+            // Fail closed: if the check fails, do not show the dashboard
+            await _supabase.auth.signOut();
+            _redirectToLogin();
           }
         }
 
+        void _redirectToLogin() {
+          if (mounted) Navigator.pushReplacementNamed(context, '/');
+        }
         @override
         void dispose() {
+          _autoCompleteTimer?.cancel();
           for (var sub in _subscriptions) {
             sub.cancel();
           }
@@ -238,7 +263,7 @@
 
         @override
         Widget build(BuildContext context) {
-          if (_isLoading) {
+          if (!_isVerified || _isLoading) {
             return const Scaffold(body: Center(child: CircularProgressIndicator()));
           }
 
@@ -1434,30 +1459,43 @@
         State<_ManageEventsView> createState() => _ManageEventsViewState();
       }
 
-    class _ManageEventsViewState extends State<_ManageEventsView> {
-      @override
-      void initState() {
-        super.initState();
-        final id = widget.openEventId;
-        if (id != null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            final act = widget.activities.firstWhere(
-                  (a) => a['id']?.toString() == id,
-              orElse: () => <String, dynamic>{},
-            );
-            if (act.isEmpty) return;
-            final org = widget.organizations.firstWhere(
-                  (o) => o['id'].toString() == act['organization_id']?.toString(),
-              orElse: () => {'name': 'Unknown Org'},
-            );
-            _showEventDetails(context, act, org);
+
+      class _ManageEventsViewState extends State<_ManageEventsView> {
+        String? _selectedOrgId;
+        Timer? _ticker;
+
+        @override
+        void initState() {
+          super.initState();
+          _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
+            if (mounted) setState(() {});
           });
+          final id = widget.openEventId;
+          if (id != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              final act = widget.activities.firstWhere(
+                    (a) => a['id']?.toString() == id,
+                orElse: () => <String, dynamic>{},
+              );
+              if (act.isEmpty) return;
+              final org = widget.organizations.firstWhere(
+                    (o) => o['id'].toString() == act['organization_id']?.toString(),
+                orElse: () => {'name': 'Unknown Org'},
+              );
+              _showEventDetails(context, act, org);
+            });
+          }
         }
-      }
-      String? _selectedOrgId;
-      @override
-      Widget build(BuildContext context) {
+
+        @override
+        void dispose() {
+          _ticker?.cancel();
+          super.dispose();
+        }
+
+        @override
+        Widget build(BuildContext context) {
         final activeActivities = widget.activities.where((a) => a['is_archived'] != true).toList();
         final awaiting = activeActivities.where((a) => a['status'] == 'Awaiting Date Approval').toList();
         final now = DateTime.now();
@@ -1476,12 +1514,12 @@
 
         final ongoing = activeActivities.where((a) {
           final status = a['status']?.toString();
-          if (status != 'Scheduled' && status != 'Completed') return false;
+          if (status != 'Scheduled') return false;
           if (_selectedOrgId != null && a['organization_id']?.toString() != _selectedOrgId) return false;
           final start = startOf(a);
           if (start == null) return false;
           final end = start.add(AppUtils.parseDuration(a['time_frame']));
-          return start.isBefore(todayEnd) && end.isAfter(todayStart);
+          return start.isBefore(todayEnd) && end.isAfter(now);
         }).toList()
           ..sort((a, b) => startOf(a)!.compareTo(startOf(b)!));
 
@@ -2409,31 +2447,19 @@
 
           // 1. Try status values in loop to handle check constraint
           bool updated = false;
-          for (var statusVal in ['Approved', 'APPROVED', 'approved', 'Completed', 'Submitted', 'Verified']) {
-            try {
-              if (reportId != null && reportId.isNotEmpty) {
+          if (reportId != null && reportId.isNotEmpty) {
+            for (final val in ['Approved', 'approved', 'Completed', 'Verified']) {
+              try {
                 await client
                     .from('accomplishment_reports')
-                    .update({'status': statusVal})
+                    .update({'status': val})
                     .eq('id', reportId);
                 updated = true;
-              }
-              if (actId != null && actId.isNotEmpty) {
-                await client
-                    .from('accomplishment_reports')
-                    .update({'status': statusVal})
-                    .eq('activity_id', actId);
-                updated = true;
-              }
-              if (updated) break;
-            } catch (e) {
-              if (e.toString().contains('accomplishment_reports_status_check') || e.toString().contains('23514')) {
-                continue;
-              } else {
                 break;
-              }
+              } catch (_) {}
             }
           }
+          if (!updated) throw Exception('Could not update report status.');
 
           // 2. Update associated activity status in activities table
           if (actId != null && actId.isNotEmpty) {
@@ -2494,7 +2520,6 @@
       String? _selectedOrgId;
       final String _schoolYear = '2025-2026';
       bool _isSaving = false;
-
       final Map<String, TextEditingController> _controllers = {
         'i': TextEditingController(text: '0'),
         'ii': TextEditingController(text: '0'),
