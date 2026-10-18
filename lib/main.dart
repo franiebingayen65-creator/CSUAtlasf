@@ -15,7 +15,7 @@ void main() async {
 
   await Supabase.initialize(
     url: 'https://lriowumebzpwxlgcided.supabase.co',
-    anonKey: 'sb_publishable_oGW_4BK6w8bxfDj7JHm9Tw_Ez5eCVEJ',
+    publishableKey: 'sb_publishable_oGW_4BK6w8bxfDj7JHm9Tw_Ez5eCVEJ',
   );
 
   if (kAlwaysRequireLogin) {

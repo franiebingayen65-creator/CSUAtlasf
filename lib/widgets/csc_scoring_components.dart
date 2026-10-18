@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
 
 class CSCScoringStyles {
   static const headerStyle = TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black);
@@ -6,8 +8,31 @@ class CSCScoringStyles {
   static const labelStyle = TextStyle(fontSize: 11, color: Colors.black87);
   static const cellStyle = TextStyle(fontSize: 10, fontWeight: FontWeight.w600);
   static const inputStyle = TextStyle(fontSize: 11, fontWeight: FontWeight.bold);
-}
 
+}
+class MaxDecimalFormatter extends TextInputFormatter {
+  final double max;
+  final int decimals;
+  MaxDecimalFormatter(this.max, {this.decimals = 1});
+
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final t = newValue.text;
+    if (t.isEmpty) return newValue;
+    if (!RegExp(r'^\d*\.?\d*$').hasMatch(t)) return oldValue;
+    if (decimals == 0 && t.contains('.')) return oldValue;
+    final parts = t.split('.');
+    if (parts.length == 2 && parts[1].length > decimals) return oldValue;
+
+    // Make "5." and ".5" parse safely
+    var safe = t;
+    if (safe.endsWith('.')) safe = '${safe}0';
+    if (safe.startsWith('.')) safe = '0$safe';
+    final v = double.tryParse(safe);
+    if (v != null && v > max + 1e-9) return oldValue;
+    return newValue;
+  }
+}
 // ==========================================
 // OFFICIAL RUBRIC CALCULATION LOGIC
 // ==========================================
@@ -242,6 +267,7 @@ double calculateFundDriveScore(double amount, [String? orgType]) {
     if (amount <= 90000) return 9.5;
     return 10.0;
   } else {
+    if (amount < 4001) return 0;
     if (amount <= 5000) return 1.0;
     if (amount <= 10000) return 2.0;
     if (amount <= 15000) return 3.0;
@@ -280,6 +306,7 @@ double calculateFinancialAssistanceScore(double amount, [String? orgType]) {
     if (amount <= 90000) return 9.5;
     return 10.0;
   } else {
+    if (amount < 4001) return 0;
     if (amount <= 5000) return 1.0;
     if (amount <= 10000) return 2.0;
     if (amount <= 15000) return 3.0;
@@ -295,15 +322,15 @@ double calculateFinancialAssistanceScore(double amount, [String? orgType]) {
 
 double calculateImplementationScore(double percent) {
   if (percent < 40) return 0;
-  if (percent <= 45) return 1.0;
-  if (percent <= 51) return 2.0;
-  if (percent <= 57) return 3.0;
-  if (percent <= 63) return 4.0;
-  if (percent <= 69) return 5.0;
-  if (percent <= 75) return 6.0;
-  if (percent <= 81) return 7.0;
-  if (percent <= 87) return 8.0;
-  if (percent <= 93) return 9.0;
+  if (percent < 46) return 1.0;
+  if (percent < 52) return 2.0;
+  if (percent < 58) return 3.0;
+  if (percent < 64) return 4.0;
+  if (percent < 70) return 5.0;
+  if (percent < 76) return 6.0;
+  if (percent < 82) return 7.0;
+  if (percent < 88) return 8.0;
+  if (percent < 94) return 9.0;
   return 10.0;
 }
 
@@ -326,6 +353,7 @@ class SDGMatrixGridCard extends StatelessWidget {
   final Map<String, TextEditingController> levelControllers;
   final TextEditingController totalController;
   final VoidCallback onCalculated;
+  final String orgType;
 
   const SDGMatrixGridCard({
     super.key,
@@ -335,6 +363,7 @@ class SDGMatrixGridCard extends StatelessWidget {
     required this.levelControllers,
     required this.totalController,
     required this.onCalculated,
+    this.orgType = '',
   });
 
   @override
@@ -345,9 +374,9 @@ class SDGMatrixGridCard extends StatelessWidget {
       {'key': 'regl', 'label': 'Reg\'l'},
       {'key': 'univ', 'label': 'Univ'},
       {'key': 'camp', 'label': 'Campus'},
-      {'key': 'coll', 'label': 'College'},
+      if (!orgType.toLowerCase().contains('campus'))
+        {'key': 'coll', 'label': 'College'},
     ];
-
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -402,6 +431,7 @@ class SDGMatrixGridCard extends StatelessWidget {
                         controller: levelControllers['${k}_sdg'],
                         keyboardType: TextInputType.number,
                         textAlign: TextAlign.center,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(2), MaxDecimalFormatter(17, decimals: 0)],
                         onChanged: (_) => onCalculated(),
                         decoration: InputDecoration(
                           hintText: 'SDGs',
@@ -415,6 +445,7 @@ class SDGMatrixGridCard extends StatelessWidget {
                         controller: levelControllers['${k}_pts'],
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         textAlign: TextAlign.center,
+                        inputFormatters: [MaxDecimalFormatter(calculateSDGPoints(k, 99, orgType))],
                         onChanged: (_) => onCalculated(),
                         decoration: InputDecoration(
                           hintText: 'Pts',
@@ -463,6 +494,8 @@ class CategoricalGridCard extends StatelessWidget {
   final Map<String, TextEditingController> levelControllers;
   final TextEditingController totalController;
   final VoidCallback onCalculated;
+  final String orgType;
+  final int maxActivities;
 
   const CategoricalGridCard({
     super.key,
@@ -472,18 +505,26 @@ class CategoricalGridCard extends StatelessWidget {
     required this.levelControllers,
     required this.totalController,
     required this.onCalculated,
+    this.orgType = '',
+    this.maxActivities = 1,
   });
-
   @override
   Widget build(BuildContext context) {
-    final levels = [
-      {'key': 'intl', 'label': 'Int\'l\n(3.5pt)'},
-      {'key': 'natl', 'label': 'Nat\'l\n(3.0pt)'},
-      {'key': 'regl', 'label': 'Reg\'l\n(2.5pt)'},
-      {'key': 'univ', 'label': 'Univ\n(2.0pt)'},
-      {'key': 'camp', 'label': 'Campus\n(1.5pt)'},
-      {'key': 'coll', 'label': 'College\n(1.0pt)'},
-    ];
+    const names = {
+      'intl': 'Int\'l',
+      'natl': 'Nat\'l',
+      'regl': 'Reg\'l',
+      'univ': 'Univ',
+      'camp': 'Campus',
+      'coll': 'College',
+    };
+    final keys = orgType.toLowerCase().contains('campus')
+        ? ['intl', 'natl', 'regl', 'univ', 'camp']
+        : ['intl', 'natl', 'regl', 'univ', 'camp', 'coll'];
+    final levels = keys.map((k) {
+      final p = getCategoricalLevelUnitPoints(k, orgType);
+      return {'key': k, 'label': '${names[k]}\n(${p}pt)'};
+    }).toList();
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -534,6 +575,7 @@ class CategoricalGridCard extends StatelessWidget {
                         controller: levelControllers[k],
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         textAlign: TextAlign.center,
+                        inputFormatters: [MaxDecimalFormatter(getCategoricalLevelUnitPoints(k, orgType) * maxActivities)],
                         onChanged: (_) => onCalculated(),
                         decoration: InputDecoration(
                           hintText: 'Pts',
@@ -674,4 +716,57 @@ class CategoryCalculatorCard extends StatelessWidget {
       ),
     );
   }
+}
+// ===== Shared form layout (used by the on-screen sheet AND the PDF) =====
+const List<String> kLevelKeys = ['intl', 'natl', 'regl', 'univ', 'camp', 'coll'];
+
+const List<String> kLevelTitles = [
+  'International\nLevel',
+  'National\nLevel',
+  'Regional\nLevel/\nProvincial',
+  'University\nWide/\nMunicipality',
+  'Campus\nWide/\nBarangay',
+  'College\nLevel',
+];
+const String kIntlNote = '(at least 3 countries)';
+
+const Map<String, List<List<List<num>>>> kSdgTiers = {
+  'spec': [
+    [[3, 5.5], [2, 5], [1, 4.5]],
+    [[3, 5], [2, 4.5], [1, 4]],
+    [[5, 4.5], [4, 4], [3, 3.5]],
+    [[5, 4], [4, 3.5], [3, 3]],
+    [[7, 3.5], [6, 3], [5, 2.5]],
+    [[10, 3], [9, 2.5], [8, 2]],
+  ],
+  'campus': [
+    [[3, 1.5], [2, 1], [1, 0.5]],
+    [[5, 2.5], [4, 2], [3, 1.5], [2, 1], [1, 0.5]],
+    [[5, 2], [4, 1.5], [3, 1]],
+    [[5, 1.5], [4, 1], [3, 0.5]],
+    [[7, 2.5], [6, 2], [5, 1.5]],
+  ],
+  'college': [
+    [[3, 2.5], [2, 2], [1, 1.5]],
+    [[3, 2.5], [2, 2], [1, 1.5]],
+    [[5, 2.5], [4, 2], [3, 1.5]],
+    [[5, 2], [4, 1.5], [3, 1]],
+    [[5, 1.5], [4, 1], [3, 0.5]],
+    [[7, 2.5], [6, 2], [5, 1.5]],
+  ],
+};
+
+/// 2.0 -> "2", 0.5 -> ".5", 1.5 -> "1.5" (same as the printed form)
+String formatTier(num v) {
+  if (v == v.truncate()) return v.toInt().toString();
+  final s = v.toString();
+  return s.startsWith('0.') ? s.substring(1) : s;
+}
+
+String pointsLabel(num v) => '${formatTier(v)} ${v == 1 ? 'point' : 'points'}';
+
+/// Caps a typed/saved value at the level's maximum (e.g. Campus Int'l = 3)
+double clampLevelPts(String level, double v, [String? orgType]) {
+  final max = getCategoricalLevelUnitPoints(level, orgType);
+  return v > max ? max : v;
 }

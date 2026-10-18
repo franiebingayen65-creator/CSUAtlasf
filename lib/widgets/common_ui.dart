@@ -1,6 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
+
+const Color _kTeal = Color(0xFF1FB5AD);
+const Color _kBellGrey = Color(0xFF8A9BAA);
+
+class _CaretPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(0, size.height)
+      ..lineTo(size.width / 2, 0)
+      ..lineTo(size.width, size.height)
+      ..close();
+    canvas.drawPath(path, Paint()..color = Colors.white);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
 
 Color statusColorFor(String status) {
   switch (status) {
@@ -203,92 +222,283 @@ class NotificationInboxButton extends StatefulWidget {
   State<NotificationInboxButton> createState() => _NotificationInboxButtonState();
 }
 
+class _NotifCategory {
+  final String key; // users | reports | gpoa | events | scores | general
+  final IconData icon;
+  final Color color;
+  const _NotifCategory(this.key, this.icon, this.color);
+}
+
 class _NotificationInboxButtonState extends State<NotificationInboxButton> {
-  static final Set<String> _dismissedIds = {};
+  final _client = Supabase.instance.client;
+  final GlobalKey _bellKey = GlobalKey();
+  final ValueNotifier<List<Map<String, dynamic>>> _items = ValueNotifier([]);
+  final List<StreamSubscription> _subs = [];
+  List<Map<String, dynamic>> _orgRows = [];
+  List<Map<String, dynamic>> _personalRows = [];
+  List<Map<String, dynamic>> _raw = [];
+
+  String? _userId;
+  String _role = ''; // lowercase: admin | adviser | president
+  String? _orgId;
+  Set<String> _read = {};
+  Set<String> _dismissed = {};
+
+  bool get _isAdmin => _role == 'admin';
+  String get _readKey => 'notif_read_$_userId';
+  String get _dismissedKey => 'notif_dismissed_$_userId';
 
   @override
   void initState() {
     super.initState();
-    _loadDismissedIds();
+    _init();
   }
 
-  Future<void> _loadDismissedIds() async {
+  @override
+  void dispose() {
+    for (final s in _subs) {
+      s.cancel();
+    }
+    _items.dispose();
+    super.dispose();
+  }
+
+  Future<void> _init() async {
+    final user = _client.auth.currentUser;
+    if (user == null) return;
+    _userId = user.id;
+
+    try {
+      final p = await _client
+          .from('profiles')
+          .select('role, organization_id')
+          .eq('id', user.id)
+          .maybeSingle();
+      _role = (p?['role'] ?? '').toString().toLowerCase();
+      _orgId = p?['organization_id']?.toString();
+    } catch (_) {}
+
     try {
       final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getStringList('dismissed_notification_ids') ?? [];
-      _dismissedIds.addAll(saved);
-      if (mounted) setState(() {});
+      _read = (prefs.getStringList(_readKey) ?? []).toSet();
+      _dismissed = (prefs.getStringList(_dismissedKey) ?? []).toSet();
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    final notifs = _client.from('notifications');
+
+    if (_isAdmin || _orgId == null) {
+      _subs.add(notifs
+          .stream(primaryKey: ['id'])
+          .order('created_at', ascending: false)
+          .limit(300)
+          .listen((d) {
+        _orgRows = List<Map<String, dynamic>>.from(d);
+        _merge();
+      }, onError: (e) => debugPrint('Notifications stream error: $e')));
+    } else {
+      // Org-wide rows for my organization.
+      _subs.add(notifs
+          .stream(primaryKey: ['id'])
+          .eq('organization_id', _orgId!)
+          .order('created_at', ascending: false)
+          .limit(100)
+          .listen((d) {
+        _orgRows = List<Map<String, dynamic>>.from(d);
+        _merge();
+      }, onError: (e) => debugPrint('Org stream error: $e')));
+
+      // Rows sent directly to me, whatever their organization_id.
+      _subs.add(notifs
+          .stream(primaryKey: ['id'])
+          .eq('recipient_id', _userId!)
+          .order('created_at', ascending: false)
+          .limit(100)
+          .listen((d) {
+        _personalRows = List<Map<String, dynamic>>.from(d);
+        _merge();
+      }, onError: (e) => debugPrint('Personal stream error: $e')));
+    }
+  }
+
+  void _merge() {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final r in [..._orgRows, ..._personalRows]) {
+      byId[r['id'].toString()] = r;
+    }
+    _raw = byId.values.toList();
+    _refilter();
+  }
+
+  // ── Who may see what ──────────────────────────────────────────────────────
+  bool _visible(Map<String, dynamic> n) {
+    final id = n['id']?.toString();
+    if (id == null || _dismissed.contains(id)) return false;
+
+    final status = (n['status'] ?? '').toString().toLowerCase();
+    if (status == 'archived' || status == 'deleted') return false;
+
+    // Sent to one specific person.
+    final rid = n['recipient_id']?.toString() ?? '';
+    if (rid.isNotEmpty) return rid == _userId;
+
+    final role = (n['recipient_role'] ?? '').toString().toLowerCase();
+    final org = n['organization_id']?.toString() ?? '';
+
+    // Admin inbox: only admin / broadcast notifications.
+    if (_isAdmin) return role == 'admin' || role == 'all';
+
+    // Org inbox: must match my role AND my organization.
+    if (role != _role && role != 'all') return false;
+    return org.isNotEmpty && org == _orgId;
+  }
+
+  bool _isRead(Map<String, dynamic> n) {
+    final id = n['id']?.toString() ?? '';
+    final personal = (n['recipient_id']?.toString() ?? '') == _userId;
+    return _read.contains(id) || (personal && n['read_at'] != null);
+  }
+
+  void _refilter() {
+    final list = _raw.where(_visible).toList()
+      ..sort((a, b) => (b['created_at'] ?? '').toString().compareTo((a['created_at'] ?? '').toString()));
+    if (mounted) _items.value = list;
+  }
+
+  Future<void> _persist() async {
+    try {
+      // Drop ids of notifications that no longer exist so storage doesn't grow forever.
+      if (_raw.isNotEmpty) {
+        final live = _raw.map((n) => n['id'].toString()).toSet();
+        _read.retainWhere(live.contains);
+        _dismissed.retainWhere(live.contains);
+      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_readKey, _read.toList());
+      await prefs.setStringList(_dismissedKey, _dismissed.toList());
     } catch (_) {}
   }
 
-  Future<void> _saveDismissedId(String id) async {
-    _dismissedIds.add(id);
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList('dismissed_notification_ids', _dismissedIds.toList());
-    } catch (_) {}
+  void _markRead(Iterable<String> ids) {
+    _read.addAll(ids);
+    _persist();
+    _refilter();
   }
 
-  Future<void> _saveDismissedIds(List<String> ids) async {
-    _dismissedIds.addAll(ids);
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList('dismissed_notification_ids', _dismissedIds.toList());
-    } catch (_) {}
+  void _dismiss(Iterable<String> ids) {
+    _dismissed.addAll(ids);
+    _persist();
+    _refilter();
+  }
+
+  // ── Presentation ──────────────────────────────────────────────────────────
+  _NotifCategory _category(String title) {
+    final t = title.toLowerCase(); // title only: activity names in the body could mislead
+    if (t.contains('account') || t.contains('password')) {
+      return const _NotifCategory('users', Icons.manage_accounts_rounded, Color(0xFF6366F1));
+    }
+    if (t.contains('report') || t.contains('accomplishment')) {
+      return const _NotifCategory('reports', Icons.assignment_turned_in_rounded, Color(0xFF0D9488));
+    }
+    if (t.contains('gpoa') || t.contains('proposal')) {
+      return const _NotifCategory('gpoa', Icons.description_rounded, Color(0xFF4F46E5));
+    }
+    if (t.contains('event') || RegExp(r'\bdate\b').hasMatch(t) || t.contains('schedule')) {
+      return const _NotifCategory('events', Icons.event_rounded, Color(0xFFB45309));
+    }
+    if (t.contains('score') || t.contains('evaluation')) {
+      return const _NotifCategory('scores', Icons.stars_rounded, Color(0xFF15803D));
+    }
+    return const _NotifCategory('general', Icons.notifications_rounded, Color(0xFF64748B));
+  }
+
+  /// Role-aware destination, so a tap never lands on a page that doesn't exist.
+  String _pageFor(String key) {
+    switch (key) {
+      case 'users':
+        return _isAdmin ? 'Manage Users' : 'Dashboard';
+      case 'reports':
+        return _isAdmin ? 'Accomplishment Reports' : 'Submit Report';
+      case 'gpoa':
+        return 'Manage GPOA';
+      case 'events':
+        return 'Manage Events';
+      case 'scores':
+        return _isAdmin ? 'Manage Scores' : 'Evaluation Scores';
+      default:
+        return 'Dashboard';
+    }
+  }
+
+  String _timeAgo(dynamic raw) {
+    final d = DateTime.tryParse(raw?.toString() ?? '')?.toLocal();
+    if (d == null) return '';
+    final diff = DateTime.now().difference(d);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+    if (diff.inHours < 24) return '${diff.inHours} hr ago';
+    if (diff.inDays < 7) return '${diff.inDays} day${diff.inDays == 1 ? '' : 's'} ago';
+    return '${d.day}/${d.month}/${d.year}';
+  }
+
+  Future<bool> _confirm(BuildContext ctx, {required String title, required String message, required String action}) async {
+    final res = await showDialog<bool>(
+      context: ctx,
+      builder: (c) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        content: Text(message, style: const TextStyle(fontSize: 14, color: Color(0xFF475569))),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B)))),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(c, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+    return res == true;
   }
 
   @override
   Widget build(BuildContext context) {
-    final client = Supabase.instance.client;
-    final userId = client.auth.currentUser?.id;
-
-    final stream = client
-        .from('notifications')
-        .stream(primaryKey: ['id']);
-
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: stream,
-      builder: (context, snapshot) {
-        final rawNotifications = List<Map<String, dynamic>>.from(snapshot.data ?? const []);
-
-        final notifications = rawNotifications.where((item) {
-          final id = item['id']?.toString();
-          if (id != null && _dismissedIds.contains(id)) return false;
-
-          final status = (item['status'] ?? '').toString().toLowerCase();
-          if (status == 'archived' || status == 'deleted') return false;
-
-          final rId = item['recipient_id']?.toString();
-          final rRole = (item['recipient_role'] ?? '').toString().toLowerCase();
-          if (userId != null && rId == userId) return true;
-          if (rId == null || rId.isEmpty) return true;
-          if (rRole == 'all' || rRole == 'admin' || rRole == 'president' || rRole == 'adviser') return true;
-          return false;
-        }).toList()
-          ..sort((a, b) => (b['created_at'] ?? '').toString().compareTo((a['created_at'] ?? '').toString()));
-
-        final unread = notifications.where((item) => item['read_at'] == null).length;
-
+    return ValueListenableBuilder<List<Map<String, dynamic>>>(
+      valueListenable: _items,
+      builder: (context, items, child) {
+        final unread = items.where((n) => !_isRead(n)).length;
         return Stack(
+          key: _bellKey,
           clipBehavior: Clip.none,
           children: [
             IconButton(
-              tooltip: 'Notifications',
-              icon: const Icon(Icons.notifications_none_rounded, color: Color(0xFF64748B)),
-              onPressed: () => _openInbox(notifications),
+              tooltip: unread > 0 ? '$unread unread notification${unread == 1 ? '' : 's'}' : 'Notifications',
+              icon: const Icon(Icons.notifications_none_rounded, color: _kBellGrey, size: 26),
+              onPressed: _openInbox,
             ),
             if (unread > 0)
               Positioned(
-                right: 2,
-                top: 2,
-                child: Container(
-                  constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-                  padding: const EdgeInsets.all(3),
-                  decoration: const BoxDecoration(color: Color(0xFFDC2626), shape: BoxShape.circle),
-                  child: Text(
-                    unread > 99 ? '99+' : '$unread',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                right: 4,
+                top: 4,
+                child: IgnorePointer(
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: _kTeal,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: Text(
+                      unread > 99 ? '99+' : '$unread',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ),
               ),
@@ -298,253 +508,242 @@ class _NotificationInboxButtonState extends State<NotificationInboxButton> {
     );
   }
 
-  Future<bool> _confirmClearAll(BuildContext ctx) async {
-    final res = await showDialog<bool>(
-      context: ctx,
-      builder: (confirmCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: const [
-            Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626), size: 24),
-            SizedBox(width: 10),
-            Text('Clear All Notifications', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          ],
-        ),
-        content: const Text(
-          'Are you sure you want to clear all notifications? This action cannot be undone.',
-          style: TextStyle(fontSize: 14, color: Color(0xFF475569)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(confirmCtx, false),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(confirmCtx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFDC2626),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Text('Clear All'),
-          ),
-        ],
-      ),
-    );
-    return res == true;
-  }
+  Future<void> _openInbox() async {
+    final box = _bellKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return;
 
-  Future<bool> _confirmDeleteSingle(BuildContext ctx, String title) async {
-    final res = await showDialog<bool>(
-      context: ctx,
-      builder: (confirmCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: const [
-            Icon(Icons.delete_outline_rounded, color: Color(0xFFDC2626), size: 22),
-            SizedBox(width: 8),
-            Text('Delete Notification', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          ],
-        ),
-        content: Text(
-          'Are you sure you want to delete "$title"?',
-          style: const TextStyle(fontSize: 14, color: Color(0xFF475569)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(confirmCtx, false),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(confirmCtx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFDC2626),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    return res == true;
-  }
+    final bellPos = box.localToGlobal(Offset.zero);
+    final bellSize = box.size;
+    final screen = MediaQuery.of(context).size;
 
-  Future<void> _openInbox(List<Map<String, dynamic>> notifications) async {
-    final client = Supabase.instance.client;
-    final userId = client.auth.currentUser?.id;
+    const double w = 380;
+    final bellCenter = bellPos.dx + bellSize.width / 2;
+    final maxLeft = screen.width - w - 12 < 12 ? 12.0 : screen.width - w - 12;
+    final double left = (bellCenter - w / 2).clamp(12.0, maxLeft).toDouble();
+    final double caretX = (bellCenter - left).clamp(24.0, w - 24).toDouble();
+    final double top = bellPos.dy + bellSize.height + 2;
+    final double maxListHeight = (screen.height - top - 150).clamp(160.0, 420.0).toDouble();
 
-    await showDialog<void>(
+    await showGeneralDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      barrierDismissible: true,
+      barrierLabel: 'Close notifications',
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 160),
+      transitionBuilder: (ctx, anim, secondary, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOut);
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(begin: const Offset(0, -0.03), end: Offset.zero).animate(curved),
+            child: child,
+          ),
+        );
+      },
+      pageBuilder: (dialogContext, a, b) {
+        return Stack(
           children: [
-            Row(
-              children: const [
-                Icon(Icons.notifications_active_rounded, color: Color(0xFF6366F1), size: 24),
-                SizedBox(width: 10),
-                Text('Notifications', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-              ],
-            ),
-            if (notifications.isNotEmpty)
-              TextButton.icon(
-                onPressed: () async {
-                  final confirmed = await _confirmClearAll(dialogContext);
-                  if (!confirmed) return;
-
-                  final idsToDismiss = <String>[];
-                  for (var item in notifications) {
-                    final id = item['id']?.toString();
-                    if (id != null) idsToDismiss.add(id);
-                    try {
-                      await client.from('notifications').delete().eq('id', item['id']);
-                    } catch (_) {}
-                  }
-                  await _saveDismissedIds(idsToDismiss);
-                  if (userId != null) {
-                    try {
-                      await client.from('notifications').delete().eq('recipient_id', userId);
-                    } catch (_) {}
-                  }
-                  if (mounted) setState(() {});
-                  if (dialogContext.mounted) Navigator.pop(dialogContext);
-                },
-                icon: const Icon(Icons.delete_sweep_rounded, size: 16, color: Color(0xFFDC2626)),
-                label: const Text('Clear all', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
+            Positioned(
+              left: left,
+              top: top,
+              width: w,
+              child: Material(
+                color: Colors.transparent,
+                child: ValueListenableBuilder<List<Map<String, dynamic>>>(
+                  valueListenable: _items,
+                  builder: (ctx, items, child) =>
+                      _buildPopover(dialogContext, items, caretX, maxListHeight),
+                ),
               ),
+            ),
           ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPopover(BuildContext dialogContext, List<Map<String, dynamic>> items, double caretX, double maxListHeight) {
+    final unreadIds = items.where((n) => !_isRead(n)).map((n) => n['id'].toString()).toList();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // little arrow pointing at the bell
+        Align(
+          alignment: Alignment.topLeft,
+          child: Padding(
+            padding: EdgeInsets.only(left: caretX - 9),
+            child: CustomPaint(size: const Size(18, 9), painter: _CaretPainter()),
+          ),
         ),
-        content: SizedBox(
-          width: 520,
-          child: notifications.isEmpty
-              ? const Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Center(
-                    child: Text('No notifications at this time.', style: TextStyle(color: Color(0xFF64748B), fontSize: 14)),
+        Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 24, offset: const Offset(0, 8))],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // header
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                color: Colors.white,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('Notifications', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF6B7C8D))),
+                    if (unreadIds.isNotEmpty) ...[
+                      const SizedBox(width: 10),
+                      Container(
+                        constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        alignment: Alignment.center,
+                        decoration: const BoxDecoration(color: _kTeal, shape: BoxShape.circle),
+                        child: Text('${unreadIds.length}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const Divider(height: 1, color: Color(0xFFDCE4EA)),
+
+              // list
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: maxListHeight),
+                child: items.isEmpty
+                    ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 36, horizontal: 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.notifications_off_outlined, size: 36, color: Color(0xFFB4C0CB)),
+                      SizedBox(height: 10),
+                      Text('You are all caught up', style: TextStyle(color: Color(0xFF7D8E9E), fontSize: 14, fontWeight: FontWeight.w600)),
+                      SizedBox(height: 2),
+                      Text('No notifications at this time.', style: TextStyle(color: Color(0xFFA3B1BE), fontSize: 12.5)),
+                    ],
                   ),
                 )
-              : StatefulBuilder(
-                  builder: (ctx, setModalState) {
-                    return ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: notifications.length,
-                      separatorBuilder: (ctx, idx) => const SizedBox(height: 8),
-                      itemBuilder: (ctx, index) {
-                        final item = notifications[index];
-                        final id = item['id']?.toString();
-                        final title = item['title']?.toString() ?? 'Notification';
-                        final color = _statusColor(item['status']?.toString());
+                    : ListView.separated(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  itemCount: items.length,
+                  separatorBuilder: (c, i) => const Divider(height: 1, color: Color(0xFFDCE4EA)),
+                  itemBuilder: (c, index) {
+                    final item = items[index];
+                    final id = item['id'].toString();
+                    final title = item['title']?.toString() ?? 'Notification';
+                    final body = item['body']?.toString() ?? '';
+                    final cat = _category(title);
+                    final isUnread = !_isRead(item);
 
-                        final isUnread = item['read_at'] == null;
-
-                        return Container(
-                          decoration: BoxDecoration(
-                            color: isUnread ? color.withAlpha(20) : Colors.grey.shade50,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: isUnread ? color.withAlpha(80) : Colors.grey.shade200),
-                          ),
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: color.withAlpha(30),
-                              child: Icon(Icons.notifications_rounded, color: color, size: 20),
+                    return InkWell(
+                      onTap: () {
+                        _markRead([id]);
+                        Navigator.pop(dialogContext);
+                        widget.onNotificationTap?.call(_pageFor(cat.key));
+                      },
+                      child: Container(
+                        color: isUnread ? const Color(0xFFEAF0F4) : const Color(0xFFF7F9FB),
+                        padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            CircleAvatar(
+                              radius: 22,
+                              backgroundColor: cat.color.withValues(alpha: 0.15),
+                              child: Icon(cat.icon, color: cat.color, size: 22),
                             ),
-                            title: Text(
-                              title,
-                              style: TextStyle(fontWeight: isUnread ? FontWeight.w800 : FontWeight.w600, fontSize: 14, color: const Color(0xFF1E293B)),
-                            ),
-                            subtitle: Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(
-                                item['body']?.toString() ?? '',
-                                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    title,
+                                    style: TextStyle(
+                                      fontSize: 14.5,
+                                      fontWeight: isUnread ? FontWeight.w800 : FontWeight.w600,
+                                      color: const Color(0xFF4A5A6A),
+                                    ),
+                                  ),
+                                  if (body.isNotEmpty) ...[
+                                    const SizedBox(height: 3),
+                                    Text(body, style: const TextStyle(fontSize: 13.5, height: 1.35, fontWeight: FontWeight.w500, color: Color(0xFF8394A4))),
+                                  ],
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      if (isUnread) ...[
+                                        Container(width: 7, height: 7, decoration: const BoxDecoration(color: _kTeal, shape: BoxShape.circle)),
+                                        const SizedBox(width: 6),
+                                      ],
+                                      Text(_timeAgo(item['created_at']), style: const TextStyle(fontSize: 11.5, color: Color(0xFFA3B1BE))),
+                                    ],
+                                  ),
+                                ],
                               ),
                             ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (isUnread)
-                                  IconButton(
-                                    tooltip: 'Mark as read',
-                                    icon: const Icon(Icons.check_circle_outline_rounded, size: 20, color: Color(0xFF10B981)),
-                                    onPressed: () async {
-                                      if (id != null) {
-                                        try {
-                                          await client.from('notifications').update({'read_at': DateTime.now().toUtc().toIso8601String()}).eq('id', id);
-                                        } catch (_) {}
-                                      }
-                                      setModalState(() {
-                                        item['read_at'] = DateTime.now().toUtc().toIso8601String();
-                                      });
-                                      if (mounted) setState(() {});
-                                    },
-                                  ),
-                                IconButton(
-                                  tooltip: 'Delete notification',
-                                  icon: const Icon(Icons.close_rounded, size: 18, color: Color(0xFF94A3B8)),
-                                  onPressed: () async {
-                                    final confirmed = await _confirmDeleteSingle(dialogContext, title);
-                                    if (!confirmed) return;
-
-                                    if (id != null) await _saveDismissedId(id);
-                                    try {
-                                      await client.from('notifications').update({'status': 'Archived', 'read_at': DateTime.now().toUtc().toIso8601String()}).eq('id', item['id']);
-                                      await client.from('notifications').delete().eq('id', item['id']);
-                                    } catch (_) {}
-                                    setModalState(() {
-                                      notifications.removeAt(index);
-                                    });
-                                    if (mounted) setState(() {});
-                                  },
-                                ),
-                              ],
+                            IconButton(
+                              tooltip: 'Dismiss',
+                              visualDensity: VisualDensity.compact,
+                              icon: const Icon(Icons.close_rounded, size: 16, color: Color(0xFFB4C0CB)),
+                              onPressed: () => _dismiss([id]),
                             ),
-                            onTap: () async {
-                              if (id != null) {
-                                try {
-                                  await client.from('notifications').update({'read_at': DateTime.now().toUtc().toIso8601String()}).eq('id', id);
-                                } catch (_) {}
-                              }
-                              if (dialogContext.mounted) Navigator.pop(dialogContext);
-
-                              if (widget.onNotificationTap != null) {
-                                final status = (item['status'] ?? '').toString();
-                                final titleLower = title.toLowerCase();
-                                final bodyLower = (item['body'] ?? '').toString().toLowerCase();
-
-                                if (status.contains('Scores') || titleLower.contains('score') || titleLower.contains('evaluation') || bodyLower.contains('score')) {
-                                  widget.onNotificationTap!('Evaluation Scores');
-                                } else if (titleLower.contains('gpoa') || titleLower.contains('proposal') || status.contains('Pending')) {
-                                  widget.onNotificationTap!('Manage GPOA');
-                                } else if (titleLower.contains('report') || titleLower.contains('accomplishment') || bodyLower.contains('report')) {
-                                  widget.onNotificationTap!('Submit Report');
-                                } else if (titleLower.contains('event') || titleLower.contains('letter') || titleLower.contains('schedule')) {
-                                  widget.onNotificationTap!('Scheduling & Letters');
-                                } else {
-                                  widget.onNotificationTap!('Dashboard');
-                                }
-                              }
-                            },
-                          ),
-                        );
-                      },
+                          ],
+                        ),
+                      ),
                     );
                   },
                 ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-  }
+              ),
 
-  static Color _statusColor(String? status) {
-    if (status == 'Scores Posted') return const Color(0xFF15803D);
-    return statusColorFor(status ?? '');
+              // footer actions
+              if (items.isNotEmpty) ...[
+                const Divider(height: 1, color: Color(0xFFDCE4EA)),
+                Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      TextButton(
+                        onPressed: unreadIds.isEmpty ? null : () => _markRead(unreadIds),
+                        child: const Text('Mark all as read', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: _kTeal)),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          final ok = await _confirm(
+                            dialogContext,
+                            title: 'Clear all notifications?',
+                            message: 'This clears your inbox only. Other users keep their own notifications.',
+                            action: 'Clear all',
+                          );
+                          if (!ok) return;
+                          final mineIds = items
+                              .where((n) => (n['recipient_id']?.toString() ?? '') == _userId)
+                              .map<Object>((n) => n['id'] as Object)
+                              .toList();
+                          _dismiss(items.map((n) => n['id'].toString()));
+                          if (mineIds.isNotEmpty) {
+                            try {
+                              await _client.from('notifications').delete().inFilter('id', mineIds);
+                            } catch (_) {}
+                          }
+                        },
+                        child: const Text('Clear all', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF8394A4))),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
