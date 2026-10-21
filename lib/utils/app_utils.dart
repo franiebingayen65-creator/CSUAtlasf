@@ -1,5 +1,57 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+class OrgUnlockService {
+  static final Set<String> _unlockedOrgIds = {};
+  static final Set<String> _lockedOrgIds = {};
+  static bool _initialized = false;
+
+  static Future<void> init() async {
+    if (_initialized) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final unlockedList = prefs.getStringList('unlocked_org_ids') ?? [];
+      final lockedList = prefs.getStringList('locked_org_ids') ?? [];
+      _unlockedOrgIds.addAll(unlockedList);
+      _lockedOrgIds.addAll(lockedList);
+      _initialized = true;
+    } catch (_) {}
+  }
+
+  static bool? getStatus(String orgId) {
+    if (orgId.isEmpty) return null;
+    if (_unlockedOrgIds.contains(orgId)) return true;
+    if (_lockedOrgIds.contains(orgId)) return false;
+    return null;
+  }
+
+  static Future<void> setStatus(String orgId, bool unlocked) async {
+    if (orgId.isEmpty) return;
+    if (unlocked) {
+      _unlockedOrgIds.add(orgId);
+      _lockedOrgIds.remove(orgId);
+    } else {
+      _lockedOrgIds.add(orgId);
+      _unlockedOrgIds.remove(orgId);
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('unlocked_org_ids', _unlockedOrgIds.toList());
+      await prefs.setStringList('locked_org_ids', _lockedOrgIds.toList());
+    } catch (_) {}
+  }
+
+  static Future<void> resetAll() async {
+    _unlockedOrgIds.clear();
+    _lockedOrgIds.clear();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('unlocked_org_ids');
+      await prefs.remove('locked_org_ids');
+    } catch (_) {}
+  }
+}
 
 class AppUtils {
   static Future<void> sendNotification({
@@ -34,11 +86,12 @@ class AppUtils {
         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
       ];
       final month = months[date.month - 1];
-      final day = date.day.toString().padLeft(2, '0');
+      final day = date.day;
       final year = date.year;
-      final hour = date.hour.toString().padLeft(2, '0');
+      final hour12 = date.hour % 12 == 0 ? 12 : date.hour % 12;
       final minute = date.minute.toString().padLeft(2, '0');
-      return '$month $day, $year - $hour:$minute';
+      final period = date.hour < 12 ? 'AM' : 'PM';
+      return '$month $day, $year - $hour12:$minute $period';
     } catch (_) {
       return dateStr.toString();
     }
@@ -132,8 +185,8 @@ class AppUtils {
     return '$hour12:$minutes ${d.hour < 12 ? 'AM' : 'PM'}';
   }
 
-  ///  "Jan 5, 2026, 8:00 AM – 10:00 AM"
-  /// If the end falls on another day, the end date is shown too.
+  ///  "Jan 5, 2026 - 8:00 AM – 10:00 AM"
+  /// If the end falls on another day: "Jan 5, 2026, 10:00 PM – Jan 6, 2026, 12:00 AM"
   static String formatEventRange(dynamic proposedDate, dynamic timeFrame) {
     if (proposedDate == null || proposedDate.toString().trim().isEmpty) return 'Not set';
     try {
@@ -141,10 +194,12 @@ class AppUtils {
       final end = start.add(parseDuration(timeFrame));
       final sameDay = start.year == end.year && start.month == end.month && start.day == end.day;
       const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      final endText = sameDay
-          ? _clock(end)
-          : '${months[end.month - 1]} ${end.day}, ${end.year}, ${_clock(end)}';
-      return '${formatDateTime(proposedDate)} – $endText';
+
+      if (sameDay) {
+        return '${months[start.month - 1]} ${start.day}, ${start.year} - ${_clock(start)} – ${_clock(end)}';
+      } else {
+        return '${months[start.month - 1]} ${start.day}, ${start.year}, ${_clock(start)} – ${months[end.month - 1]} ${end.day}, ${end.year}, ${_clock(end)}';
+      }
     } catch (_) {
       return formatDateTime(proposedDate);
     }
