@@ -873,7 +873,7 @@ class _OrgDashboardState extends State<OrgDashboard> {
       if (org is! Map) return;
       _userRole = profile['role']?.toString();
       _orgData = Map<String, dynamic>.from(org);
-      final orgId = _orgData!['id'].toString();
+      final orgId = _orgData?['id']?.toString() ?? '';
 
       final results = await Future.wait([
         _supabase.from('profiles').select('id, full_name, email, role, organization_id').eq('organization_id', orgId),
@@ -887,12 +887,16 @@ class _OrgDashboardState extends State<OrgDashboard> {
         _orgProfiles = List<Map<String, dynamic>>.from(results[0] as List);
         _myActivities = acts;
       });
+      _returnExpiredPendingDates();
 
       _activitySubscription?.cancel();
       _activitySubscription = _supabase.from('activities').stream(primaryKey: ['id']).eq('organization_id', orgId).listen((data) async {
         final acts = List<Map<String, dynamic>>.from(data);
         await UserArchive.decorate(acts, 'activity');
-        if (mounted) setState(() => _myActivities = acts);
+        if (mounted) {
+          setState(() => _myActivities = acts);
+          _returnExpiredPendingDates();
+        }
       });
 
       // NEW: live updates for the organization row (lock/unlock)
@@ -902,8 +906,8 @@ class _OrgDashboardState extends State<OrgDashboard> {
           .stream(primaryKey: ['id'])
           .eq('id', orgId)
           .listen((rows) {
-        if (rows.isNotEmpty && mounted && _orgData != null) {
-          setState(() => _orgData = {..._orgData!, ...rows.first});
+        if (rows.isNotEmpty && mounted) {
+          setState(() => _orgData = {...?_orgData, ...rows.first});
         }
       });
     } catch (e) {
@@ -913,6 +917,53 @@ class _OrgDashboardState extends State<OrgDashboard> {
     }
   }
   int _initialTab = 0;
+
+  final Set<String> _returning = {};
+
+  void _returnExpiredPendingDates() {
+    final now = DateTime.now();
+    for (final item in _myActivities) {
+      final status = (item['status'] ?? '').toString();
+      if (status != 'Awaiting Date Approval' && status != 'Approved') continue;
+      if (item['is_archived'] == true) continue;
+      final raw = item['proposed_date']?.toString().trim() ?? '';
+      if (raw.isEmpty) continue;
+
+      try {
+        final start = DateTime.parse(raw).toLocal();
+        final id = item['id'].toString();
+        if (!start.isBefore(now) || !_returning.add(id)) continue;
+
+        const remark = 'The proposed event date passed without Admin approval. Please choose a new date and resubmit.';
+
+        _supabase
+            .from('activities')
+            .update({
+          'status': 'Reschedule',
+          'remarks': remark,
+          'revision_by': null,
+        })
+            .eq('id', item['id'])
+            .then((_) {
+          if (mounted) {
+            setState(() {
+              item['status'] = 'Reschedule';
+              item['remarks'] = remark;
+              item['revision_by'] = null;
+            });
+          }
+          AppUtils.sendNotification(
+            title: 'Reschedule Needed 📅',
+            body: 'The proposed date for "${item['title']}" passed without approval. Please choose a new date.',
+            recipientRole: 'president',
+            organizationId: item['organization_id']?.toString(),
+          );
+        }).catchError((_) {
+          _returning.remove(id);
+        });
+      } catch (_) {}
+    }
+  }
 
   static const _pageAliases = {
     'GPOA Status': 'Manage GPOA',
@@ -995,6 +1046,11 @@ class _OrgDashboardState extends State<OrgDashboard> {
         ? 0
         : activeActivities.where((a) => a['status'] == 'Completed' || AppUtils.isEventDone(a)).length;
 
+    final reaccreditationActionCount = (!isAdviser && (_orgData?['reaccreditation_status'] == null || _orgData?['reaccreditation_status'] == 'Not Submitted')) ? 1 : 0;
+
+    final org = _orgData ?? <String, dynamic>{};
+    final orgName = (org['name'] ?? 'Organization').toString();
+
     return Scaffold(
       backgroundColor: _C.bg,
       body: Row(
@@ -1007,13 +1063,14 @@ class _OrgDashboardState extends State<OrgDashboard> {
             eventsActionCount: eventsActionCount,
             gpoaActionCount: gpoaActionCount,
             reportsActionCount: reportsActionCount,
+            reaccreditationActionCount: reaccreditationActionCount,
             onToggleCollapse: () => setState(() => _isSidebarCollapsed = !_isSidebarCollapsed),
           ),
           Expanded(
             child: Column(
               children: [
                 _OrgTopBar(
-                  orgName: _orgData!['name'],
+                  orgName: orgName,
                   userRole: _userRole ?? 'President',
                   onLogout: _showLogoutDialog,
                   onProfile: () => _onPageSelected('Profile'),
@@ -1034,9 +1091,12 @@ class _OrgDashboardState extends State<OrgDashboard> {
 
   Widget _buildPage() {
     final role = _userRole ?? 'President';
+    final org = _orgData ?? <String, dynamic>{};
+    final orgId = (org['id'] ?? '').toString();
+
     switch (_activePage) {
       case 'GPOA Submission':
-        if (_gpoaLocked(_myActivities, orgData: _orgData)) {
+        if (_gpoaLocked(_myActivities, orgData: org)) {
           return Padding(
             padding: const EdgeInsets.all(32),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1051,24 +1111,26 @@ class _OrgDashboardState extends State<OrgDashboard> {
             ]),
           );
         }
-        return _GPOASubmissionView(orgId: _orgData!['id'], orgType: _orgData!['type']?.toString(), onBack: () => _onPageSelected('Manage GPOA'));
+        return _GPOASubmissionView(orgId: orgId, orgType: org['type']?.toString(), onBack: () => _onPageSelected('Manage GPOA'));
       case 'Manage GPOA':
-        return _GPOAStatusGridView(activities: _myActivities, orgData: _orgData, initialTab: _initialTab, onAction: (page) => _onPageSelected(page), userRole: role, onRefresh: _fetchOrgData);
+        return _GPOAStatusGridView(activities: _myActivities, orgData: org, initialTab: _initialTab, onAction: (page) => _onPageSelected(page), userRole: role, onRefresh: _fetchOrgData);
       case 'Manage Events':
-        return _OrgManageEventsView(orgId: _orgData!['id'].toString(), activities: _myActivities, initialTab: _initialTab, onRefresh: _fetchOrgData, userRole: role, onGoToReports: () => _onPageSelected('Submit Report'));
+        return _OrgManageEventsView(orgId: orgId, activities: _myActivities, initialTab: _initialTab, onRefresh: _fetchOrgData, userRole: role, onGoToReports: () => _onPageSelected('Submit Report'));
       case 'GPOA Report':
-        return _GPOAReportPrintingView(orgData: _orgData!, activities: _myActivities, profiles: _orgProfiles, onBack: () => _onPageSelected('Manage GPOA'));
+        return _GPOAReportPrintingView(orgData: org, activities: _myActivities, profiles: _orgProfiles, onBack: () => _onPageSelected('Manage GPOA'));
       case 'Submit Report':
         return _SubmitReportView(activities: _myActivities, userRole: role, onRefresh: _fetchOrgData);
+      case 'Re-Accreditation':
+        return _OrgReAccreditationView(orgData: org, onRefresh: _fetchOrgData, userRole: role);
       case 'Evaluation Scores':
-        return _OrgEvaluationScoresView(orgData: _orgData!);
+        return _OrgEvaluationScoresView(orgData: org);
       case 'Archives':
-        return _ArchivesView(orgData: _orgData!, activities: _myActivities, userRole: role);
+        return _ArchivesView(orgData: org, activities: _myActivities, userRole: role);
       case 'Profile':
-        return _OrgProfileView(orgData: _orgData!);
+        return _OrgProfileView(orgData: org);
       case 'Dashboard':
       default:
-        return _OrgDashboardContent(orgData: _orgData!, activities: _myActivities, userRole: role, onRefresh: _fetchOrgData, onNavigate: _onPageSelected);
+        return _OrgDashboardContent(orgData: org, activities: _myActivities, userRole: role, onRefresh: _fetchOrgData, onNavigate: _onPageSelected);
     }
   }
 }
@@ -1082,6 +1144,7 @@ class _OrgSidebar extends StatelessWidget {
   final int eventsActionCount;
   final int gpoaActionCount;
   final int reportsActionCount;
+  final int reaccreditationActionCount;
 
   const _OrgSidebar({
     required this.isCollapsed,
@@ -1092,6 +1155,7 @@ class _OrgSidebar extends StatelessWidget {
     this.eventsActionCount = 0,
     this.gpoaActionCount = 0,
     this.reportsActionCount = 0,
+    this.reaccreditationActionCount = 0,
   });
 
   @override
@@ -1173,6 +1237,14 @@ class _OrgSidebar extends StatelessWidget {
                   isSelected: activePage == 'Evaluation Scores' || activePage == 'Organization Ranks',
                   isCollapsed: isCollapsed,
                   onTap: () => onPageSelected('Evaluation Scores'),
+                ),
+                _SidebarItem(
+                  icon: Icons.verified_user_rounded,
+                  title: 'Re-Accreditation',
+                  badgeCount: reaccreditationActionCount,
+                  isSelected: activePage == 'Re-Accreditation',
+                  isCollapsed: isCollapsed,
+                  onTap: () => onPageSelected('Re-Accreditation'),
                 ),
                 _SidebarItem(icon: Icons.folder_rounded, title: 'Archives', isSelected: activePage == 'Archives', isCollapsed: isCollapsed, onTap: () => onPageSelected('Archives')),
               ],
@@ -1548,6 +1620,10 @@ class _OrgStandingCardState extends State<_OrgStandingCard> {
   Widget build(BuildContext context) {
     final rawRating = _standing?['adjectival_rating']?.toString() ?? 'Pending Evaluation';
     final rating = rawRating.contains('|') ? rawRating.split('|').first : rawRating;
+    final totalNum = (_standing?['grand_total'] as num?)?.toDouble();
+    final scoreStr = _isLoading
+        ? 'Loading…'
+        : (totalNum != null ? '${totalNum.toStringAsFixed(2)} pts' : 'No score yet');
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -1564,11 +1640,7 @@ class _OrgStandingCardState extends State<_OrgStandingCard> {
           Text('School year $_schoolYear', style: const TextStyle(fontSize: 12, color: _C.muted)),
           const SizedBox(height: 24),
           Text(
-            _isLoading
-                ? 'Loading…'
-                : _standing == null
-                ? 'No score yet'
-                : '${(((_standing!['grand_total'] as num?)?.toDouble()) ?? 0).toStringAsFixed(2)} pts',
+            scoreStr,
             style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: _C.primary),
           ),
           if (_standing != null) ...[
@@ -2394,7 +2466,6 @@ class _OrgManageEventsBody extends StatelessWidget {
     final isAdviser = userRole == 'Adviser';
     final active = activities.where((a) => a['is_archived'] != true);
     final schedulingList = active.where((a) => ['Approved', 'Awaiting Date Approval', 'Reschedule'].contains(a['status'])).toList();
-    final revisionList = active.where((a) => a['status'] == 'Needs Revision').toList();
     final scheduledList = active.where((a) => a['status'] == 'Scheduled').toList()
       ..sort((a, b) {
         final rawA = a['proposed_date']?.toString().trim() ?? '';
@@ -2405,8 +2476,8 @@ class _OrgManageEventsBody extends StatelessWidget {
       });
 
     return DefaultTabController(
-      length: 3,
-      initialIndex: initialTab > 2 ? 0 : initialTab,
+      length: 2,
+      initialIndex: initialTab > 1 ? 0 : initialTab,
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
@@ -2417,7 +2488,7 @@ class _OrgManageEventsBody extends StatelessWidget {
               subtitle: isAdviser ? 'Follow the schedule and approval status of your organization\'s events.' : 'For each approved proposal: attach the letter and concept paper, pick a date, then submit for approval.',
             ),
             const SizedBox(height: 24),
-            _Tabs(labels: ['Date & letter (${schedulingList.length})', 'Needs correction (${revisionList.length})', 'Scheduled events (${scheduledList.length})']),
+            _Tabs(labels: ['Date & letter (${schedulingList.length})', 'Scheduled events (${scheduledList.length})']),
             const SizedBox(height: 20),
             Expanded(
               child: TabBarView(
@@ -2425,7 +2496,6 @@ class _OrgManageEventsBody extends StatelessWidget {
                   (blockers.isEmpty || isAdviser)
                       ? _buildList(context, schedulingList, 'scheduling')
                       : Column(children: [_blockedBanner(), Expanded(child: _buildList(context, schedulingList, 'scheduling'))]),
-                  _buildList(context, revisionList, 'corrections'),
                   _buildList(context, scheduledList, 'letters'),
                 ],
               ),
@@ -2520,27 +2590,28 @@ class _OrgManageEventsBody extends StatelessWidget {
                   final hasLetter = event['letter_url'] != null && event['letter_url'].toString().trim().isNotEmpty;
                   final isReschedule = status == 'Reschedule';
                   final hasConcept = event['concept_paper_url'] != null && event['concept_paper_url'].toString().trim().isNotEmpty;
-                  final dateReady = hasDate && (!isReschedule || _dateIsFuture(event));
+                  final dateReady = hasDate && _dateIsFuture(event);
+                  final isPassed = hasDate && !_dateIsFuture(event);
                   final rejected = (status == 'Approved' || isReschedule) && (event['remarks']?.toString().trim().isNotEmpty ?? false);
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 12),
                     child: _ItemCard(
                       icon: status == 'Scheduled' ? Icons.event_available_rounded : Icons.event_rounded,
-                      color: status == 'Scheduled' ? _C.success : _C.primary,
+                      color: status == 'Scheduled' ? _C.success : (isPassed ? _C.danger : _C.primary),
                       title: event['title'] ?? 'Untitled',
                       body: [
                         _statusLine(status),
                         _meta(
                           !hasDate
                               ? 'No date selected yet'
-                              : (isReschedule && !dateReady)
-                              ? 'Previous date passed: ${AppUtils.formatEventRange(event['proposed_date'], event['time_frame'])}'
+                              : isPassed
+                              ? 'Proposed date passed: ${AppUtils.formatEventRange(event['proposed_date'], event['time_frame'])}'
                               : 'Date: ${AppUtils.formatEventRange(event['proposed_date'], event['time_frame'])}',
                           color: dateReady ? _C.body : _C.danger,
                           bold: true,
                         ),
-                        if (status == 'Approved' || isReschedule)
+                        if (status == 'Approved' || isReschedule || status == 'Awaiting Date Approval')
                           Wrap(
                             spacing: 8,
                             runSpacing: 6,
@@ -4079,7 +4150,6 @@ class _OrgProfileViewState extends State<_OrgProfileView> {
     final adviser = _profiles.firstWhere((p) => p['role'] == 'Adviser', orElse: () => {'full_name': 'Not assigned'});
     final president = _profiles.firstWhere((p) => p['role'] == 'President', orElse: () => {'full_name': 'Not assigned'});
     final String? logoUrl = widget.orgData['logo_url'];
-    final points = _completedActivities.fold<double>(0, (sum, item) => sum + (double.tryParse(item['points']?.toString() ?? '0') ?? 0));
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(32),
@@ -4122,6 +4192,8 @@ class _OrgProfileViewState extends State<_OrgProfileView> {
                       decoration: BoxDecoration(color: _C.primarySoft, borderRadius: BorderRadius.circular(20)),
                       child: Text(widget.orgData['type']?.toString() ?? '', style: const TextStyle(color: _C.primary, fontWeight: FontWeight.w600, fontSize: 12)),
                     ),
+                    const SizedBox(height: 8),
+                    _buildReaccreditationPill((widget.orgData['reaccreditation_status'] ?? (widget.orgData['reaccreditation_url'] != null && widget.orgData['reaccreditation_url'].toString().isNotEmpty ? 'Pending' : 'Not Submitted')).toString()),
                   ],
                 ),
               ),
@@ -4164,11 +4236,7 @@ class _OrgProfileViewState extends State<_OrgProfileView> {
                       title: 'Performance',
                       icon: Icons.analytics_outlined,
                       child: Column(children: [
-                        Row(children: [
-                          Expanded(child: _StatBox(label: 'Completed', value: _completedActivities.length.toString(), icon: Icons.task_alt_rounded, color: _C.success)),
-                          const SizedBox(width: 12),
-                          Expanded(child: _StatBox(label: 'Points', value: points.toStringAsFixed(2), icon: Icons.star_outline_rounded, color: _C.warning)),
-                        ]),
+                        _StatBox(label: 'Completed Activities', value: _completedActivities.length.toString(), icon: Icons.task_alt_rounded, color: _C.success),
                         const SizedBox(height: 24),
                         const Align(alignment: Alignment.centerLeft, child: Text('Recent accomplishments', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _C.muted))),
                         const SizedBox(height: 8),
@@ -4190,6 +4258,32 @@ class _OrgProfileViewState extends State<_OrgProfileView> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildReaccreditationPill(String status) {
+    Color bg; Color fg; String text; IconData icon;
+    switch (status) {
+      case 'Approved':
+        bg = const Color(0xFFECFDF5); fg = const Color(0xFF059669); text = 'Re-Accredited'; icon = Icons.verified_rounded;
+        break;
+      case 'Pending':
+        bg = const Color(0xFFFFFBEB); fg = const Color(0xFFD97706); text = 'Awaiting Approval'; icon = Icons.hourglass_top_rounded;
+        break;
+      default:
+        bg = const Color(0xFFF1F5F9); fg = const Color(0xFF64748B); text = 'Re-Accreditation Not Submitted'; icon = Icons.remove_circle_outline_rounded;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(16)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: fg),
+          const SizedBox(width: 6),
+          Text(text, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: fg)),
+        ],
       ),
     );
   }
@@ -5100,5 +5194,309 @@ Future<void> _adviserApproveAll(BuildContext context, List<Map<String, dynamic>>
     onRefresh();
   } catch (e) {
     if (context.mounted) AppUtils.showTopToast(context, 'Error: $e', isError: true);
+  }
+}
+
+class _OrgReAccreditationView extends StatefulWidget {
+  final Map<String, dynamic> orgData;
+  final VoidCallback onRefresh;
+  final String userRole;
+
+  const _OrgReAccreditationView({
+    required this.orgData,
+    required this.onRefresh,
+    required this.userRole,
+  });
+
+  @override
+  State<_OrgReAccreditationView> createState() => _OrgReAccreditationViewState();
+}
+
+class _OrgReAccreditationViewState extends State<_OrgReAccreditationView> {
+  PlatformFile? _selectedFile;
+  bool _isUploading = false;
+
+  Future<void> _pickFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'],
+      allowMultiple: false,
+      withData: true,
+    );
+    if (result != null && result.files.isNotEmpty) {
+      setState(() => _selectedFile = result.files.first);
+    }
+  }
+
+  Future<void> _submitAttachment() async {
+    if (_selectedFile == null || _selectedFile!.bytes == null) {
+      AppUtils.showTopToast(context, 'Please attach a re-accreditation document first.', isError: true);
+      return;
+    }
+    setState(() => _isUploading = true);
+    try {
+      final orgId = widget.orgData['id'].toString();
+      final url = await StorageUtils.upload('reaccreditation', _selectedFile!.name, _selectedFile!.bytes!);
+
+      await Supabase.instance.client.from('organizations').update({
+        'reaccreditation_url': url,
+        'reaccreditation_status': 'Pending',
+        'reaccreditation_remarks': null,
+        'reaccreditation_submitted_at': DateTime.now().toIso8601String(),
+      }).eq('id', orgId);
+
+      AppUtils.sendNotification(
+        title: 'Re-Accreditation Submitted 📄',
+        body: '${widget.orgData['name']} attached their Re-Accreditation document for review.',
+        recipientRole: 'admin',
+        organizationId: orgId,
+      );
+
+      if (!mounted) return;
+      AppUtils.showTopToast(context, 'Re-accreditation document submitted successfully for review!');
+      setState(() => _selectedFile = null);
+      widget.onRefresh();
+    } catch (e) {
+      if (mounted) AppUtils.showTopToast(context, 'Submission failed: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = (widget.orgData['reaccreditation_status'] ?? (widget.orgData['reaccreditation_url'] != null && widget.orgData['reaccreditation_url'].toString().isNotEmpty ? 'Pending' : 'Not Submitted')).toString();
+    final fileUrl = (widget.orgData['reaccreditation_url'] ?? '').toString();
+    final submittedAt = widget.orgData['reaccreditation_submitted_at'];
+    final isPresident = widget.userRole == 'President';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _PageHeader(
+            title: 'Organization Re-Accreditation',
+            subtitle: 'Attach and submit your annual re-accreditation document for OSDW validation.',
+          ),
+          const SizedBox(height: 24),
+          _buildStatusBanner(status),
+          const SizedBox(height: 24),
+          if (fileUrl.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: _C.border),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10, offset: const Offset(0, 4))],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(color: _C.primarySoft, borderRadius: BorderRadius.circular(16)),
+                    child: const Icon(Icons.picture_as_pdf_rounded, color: _C.primary, size: 28),
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Text('Submitted Re-Accreditation Document', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: _C.text)),
+                            const SizedBox(width: 10),
+                            _buildStatusPill(status),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.schedule_rounded, size: 14, color: _C.muted),
+                            const SizedBox(width: 4),
+                            Text(
+                              submittedAt != null ? 'Submitted on ${AppUtils.formatDateTime(submittedAt)}' : 'Attached Document Available',
+                              style: const TextStyle(fontSize: 12, color: _C.muted, fontWeight: FontWeight.w500),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      final ok = await StorageUtils.open(fileUrl);
+                      if (!ok && context.mounted) AppUtils.showTopToast(context, 'Could not open document.', isError: true);
+                    },
+                    icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                    label: const Text('View Document'),
+                    style: _filledBtn(),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+          if (status != 'Approved' && isPresident) ...[
+            Container(
+              padding: const EdgeInsets.all(28),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: _C.border),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10, offset: const Offset(0, 4))],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(color: _C.primarySoft, borderRadius: BorderRadius.circular(12)),
+                        child: const Icon(Icons.cloud_upload_rounded, color: _C.primary, size: 22),
+                      ),
+                      const SizedBox(width: 14),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            fileUrl.isNotEmpty ? 'Re-upload Re-Accreditation Attachment' : 'Upload Re-Accreditation Document',
+                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: _C.text),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'Accepted formats: PDF, DOCX, PNG, JPG (Max size 15MB)',
+                            style: TextStyle(fontSize: 12, color: _C.muted),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  InkWell(
+                    onTap: _isUploading ? null : _pickFile,
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
+                      decoration: BoxDecoration(
+                        color: _C.bg,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: _selectedFile != null ? _C.primary : _C.border, width: _selectedFile != null ? 1.5 : 1),
+                      ),
+                      child: Column(
+                        children: [
+                          Icon(
+                            _selectedFile != null ? Icons.insert_drive_file_rounded : Icons.file_upload_outlined,
+                            size: 36,
+                            color: _selectedFile != null ? _C.primary : _C.muted,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            _selectedFile != null ? _selectedFile!.name : 'Click to select re-accreditation file',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: _selectedFile != null ? _C.primary : _C.text,
+                            ),
+                          ),
+                          if (_selectedFile == null) ...[
+                            const SizedBox(height: 4),
+                            const Text('Select your official PDF requirement document', style: TextStyle(fontSize: 12, color: _C.muted)),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: (_selectedFile != null && !_isUploading) ? _submitAttachment : null,
+                      icon: _isUploading
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.send_rounded, size: 18),
+                      label: Text(_isUploading ? 'Uploading...' : 'Submit Re-Accreditation Attachment', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      style: _filledBtn(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusPill(String status) {
+    Color bg; Color fg; String text; IconData icon;
+    switch (status) {
+      case 'Approved':
+        bg = const Color(0xFFECFDF5); fg = const Color(0xFF059669); text = 'Re-Accredited'; icon = Icons.verified_rounded;
+        break;
+      case 'Pending':
+        bg = const Color(0xFFFFFBEB); fg = const Color(0xFFD97706); text = 'Awaiting Approval'; icon = Icons.hourglass_top_rounded;
+        break;
+      default:
+        bg = const Color(0xFFF1F5F9); fg = const Color(0xFF64748B); text = 'Not Submitted'; icon = Icons.remove_circle_outline_rounded;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: fg),
+          const SizedBox(width: 4),
+          Text(text, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: fg)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBanner(String status) {
+    Color bg; Color border; Color fg; IconData icon; String title; String desc;
+    switch (status) {
+      case 'Approved':
+        bg = const Color(0xFFECFDF5); border = const Color(0xFFA7F3D0); fg = const Color(0xFF047857); icon = Icons.verified_rounded;
+        title = 'Re-Accredited'; desc = 'Your organization has been officially validated and re-accredited for this school year.';
+        break;
+      case 'Pending':
+        bg = const Color(0xFFFFFBEB); border = const Color(0xFFFDE68A); fg = const Color(0xFFB45309); icon = Icons.hourglass_top_rounded;
+        title = 'Awaiting Approval'; desc = 'Your re-accreditation document has been submitted and is currently being evaluated by OSDW.';
+        break;
+      default:
+        bg = const Color(0xFFF8FAFC); border = const Color(0xFFE2E8F0); fg = const Color(0xFF475569); icon = Icons.info_outline_rounded;
+        title = 'Not Submitted'; desc = 'Your organization has not yet submitted an annual re-accreditation document.';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20), border: Border.all(color: border)),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: fg.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(14)),
+            child: Icon(icon, color: fg, size: 28),
+          ),
+          const SizedBox(width: 18),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17, color: fg)),
+                const SizedBox(height: 4),
+                Text(desc, style: TextStyle(fontSize: 13, color: fg.withValues(alpha: 0.95), fontWeight: FontWeight.w500)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

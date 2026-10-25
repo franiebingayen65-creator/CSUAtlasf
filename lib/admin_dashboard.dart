@@ -139,7 +139,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
   void _returnExpiredPendingDates() {
     final now = DateTime.now();
     for (final item in _activities) {
-      if ((item['status'] ?? '').toString() != 'Awaiting Date Approval') continue;
+      final status = (item['status'] ?? '').toString();
+      if (status != 'Awaiting Date Approval' && status != 'Approved') continue;
       if (item['is_archived'] == true) continue;
       final raw = item['proposed_date']?.toString().trim() ?? '';
       if (raw.isEmpty) continue;
@@ -358,6 +359,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final dateCount = _activities
         .where((a) => a['status'] == 'Awaiting Date Approval' && a['is_archived'] != true)
         .length;
+    final reaccreditationCount = _organizations
+        .where((o) => (o['reaccreditation_status'] ?? (o['reaccreditation_url'] != null && o['reaccreditation_url'].toString().isNotEmpty ? 'Pending' : 'Not Submitted')).toString() == 'Pending')
+        .length;
+    final pendingUsersCount = _profiles
+        .where((p) => (p['organization_id'] == null || p['organization_id'].toString().isEmpty) && p['role'] != 'Admin')
+        .length;
 
     return Scaffold(
       backgroundColor: UiColors.bg,
@@ -369,7 +376,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
             onPageSelected: _onPageSelected,
             onToggleCollapse: () =>
                 setState(() => _isSidebarCollapsed = !_isSidebarCollapsed),
-            badges: {'Manage GPOA': planCount, 'Manage Events': dateCount},
+            badges: {
+              'Manage GPOA': planCount,
+              'Manage Events': dateCount,
+              'Manage Users': pendingUsersCount,
+              'Manage Re-Accreditation': reaccreditationCount,
+            },
           ),
           Expanded(
             child: Column(
@@ -429,7 +441,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
             onRefresh: _fetchInitialData,
             searchQuery: _searchQuery);
       case 'Manage Re-Accreditation':
-        return const _ManageReAccreditationView();
+        return _ManageReAccreditationView(
+            organizations: _organizations,
+            onRefresh: _fetchInitialData,
+            searchQuery: _searchQuery);
       case 'Manage Scores':
       case 'Add Scores':
         return _AddScoresView(
@@ -469,16 +484,6 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
     if (s == 'Endorsed') return true;
     return a['revision_by'] == 'Admin' &&
         (s == 'Needs Revision' || s == 'Pending');
-  }
-
-  String _adminLabel(Map<String, dynamic> a) {
-    final s = (a['status'] ?? 'Pending').toString();
-    if (s == 'Endorsed') return 'Endorsed';
-    if (a['revision_by'] == 'Admin' &&
-        (s == 'Needs Revision' || s == 'Pending')) {
-      return 'Pending Revision';
-    }
-    return s;
   }
 
   @override
@@ -643,12 +648,10 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
                     itemCount: orgsToDisplay.length,
                     itemBuilder: (context, index) {
                       final org = orgsToDisplay[index];
-                      final orgActivities = activeActivities.where((
-                          a) =>
-                      a['organization_id']?.toString() ==
-                          org['id'].toString() &&
-                          ['Approved', 'Scheduled', 'Completed']
-                              .contains(a['status'])).toList();
+                      final orgActivities = activeActivities.where((a) =>
+                          a['organization_id']?.toString() == org['id'].toString() &&
+                          ['Approved', 'Awaiting Date Approval', 'Reschedule', 'Scheduled', 'Completed'].contains(a['status'])
+                      ).toList();
                       return Container(
                         margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(color: Colors
@@ -861,17 +864,44 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
     }
   }
   Widget _buildGPOAListTile(Map<String, dynamic> act, Map<String, dynamic> org) {
+    final status = act['status']?.toString() ?? 'Pending';
+    final subtitleStr = (act['subtitle'] ?? '').toString();
+    final hasProposedDate = act['proposed_date'] != null && act['proposed_date'].toString().trim().isNotEmpty;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.withValues(alpha: 0.1))),
       child: ListTile(
-        leading: const Icon(Icons.description_outlined, color: Color(0xFF6366F1)),
-        title: Text(act['title'] ?? 'Untitled', style: const TextStyle(fontWeight: FontWeight.bold)),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: const Color(0xFF6366F1).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+          child: const Icon(Icons.description_rounded, color: Color(0xFF6366F1), size: 22),
+        ),
+        title: Text(act['title'] ?? 'Untitled', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Status: ${_adminLabel(act)}'),
-            Text('Submitted: ${AppUtils.formatDateTime(act['created_at'])}', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                StatusBadge(status: status),
+                if (subtitleStr.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(6)),
+                    child: Text(subtitleStr, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              hasProposedDate
+                  ? 'Scheduled Range: ${AppUtils.formatEventRange(act['proposed_date'], act['time_frame'])}'
+                  : 'Submitted: ${AppUtils.formatDateTime(act['created_at'])}',
+              style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+            ),
           ],
         ),
         trailing: Row(
@@ -1211,6 +1241,7 @@ class _ManageUsersViewState extends State<_ManageUsersView> {
                 final role = user['role'] ?? 'User';
                 final email = _getNormalizedEmail(user);
                 final org = _getAssignedOrg(user);
+                final isPendingOrg = (user['organization_id'] == null || user['organization_id'].toString().isEmpty) && role != 'Admin';
 
                 Color avatarColor = const Color(0xFF6366F1);
                 IconData avatarIcon = Icons.person_rounded;
@@ -1226,7 +1257,19 @@ class _ManageUsersViewState extends State<_ManageUsersView> {
                       backgroundColor: avatarColor.withValues(alpha: 0.1),
                       child: Icon(avatarIcon, color: avatarColor, size: 22),
                     ),
-                    title: Text(user['full_name'] ?? 'Unknown User', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF1E293B))),
+                    title: Row(
+                      children: [
+                        Text(user['full_name'] ?? 'Unknown User', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF1E293B))),
+                        if (isPendingOrg) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFFFDE68A))),
+                            child: const Text('Pending Org Assignment ⚠️', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
+                          ),
+                        ],
+                      ],
+                    ),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1853,8 +1896,11 @@ class _ManageEventsViewState extends State<_ManageEventsView> {
   @override
   void initState() {
     super.initState();
-    _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) setState(() {});
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        widget.onRefresh();
+        setState(() {});
+      }
     });
     final id = widget.openEventId;
     if (id != null) {
@@ -1888,7 +1934,25 @@ class _ManageEventsViewState extends State<_ManageEventsView> {
             DateTime.tryParse(a['created_at']?.toString() ?? '') ??
             DateTime.now();
 
-    final awaiting = activeActivities.where((a) => a['status'] == 'Awaiting Date Approval').toList()
+    final now = DateTime.now();
+
+    bool isPassedDate(Map<String, dynamic> a) {
+      final raw = a['proposed_date']?.toString().trim() ?? '';
+      if (raw.isEmpty) return false;
+      try {
+        final start = DateTime.parse(raw).toLocal();
+        return start.isBefore(now);
+      } catch (_) {
+        return false;
+      }
+    }
+
+    final awaiting = activeActivities.where((a) {
+      if (a['status'] != 'Awaiting Date Approval') return false;
+      if (_selectedOrgId != null && a['organization_id']?.toString() != _selectedOrgId) return false;
+      if (isPassedDate(a)) return false;
+      return true;
+    }).toList()
       ..sort((a, b) => requestedAt(a).compareTo(requestedAt(b)));
 
     DateTime? startOf(Map<String, dynamic> a) {
@@ -1908,18 +1972,21 @@ class _ManageEventsViewState extends State<_ManageEventsView> {
       final start = startOf(a);
       return start != null;
     }).toList()
-      ..sort((a, b) => startOf(a)!.compareTo(startOf(b)!));
-
-    final conflictRequests = awaiting.where((event) =>
-    (_selectedOrgId == null || event['organization_id']?.toString() == _selectedOrgId) &&
-        _findScheduleConflicts(event, activeActivities).isNotEmpty).toList();
+      ..sort((a, b) {
+        final sa = startOf(a);
+        final sb = startOf(b);
+        if (sa == null && sb == null) return 0;
+        if (sa == null) return 1;
+        if (sb == null) return -1;
+        return sa.compareTo(sb);
+      });
 
     final List<Map<String, dynamic>> orgsToDisplay = widget.organizations
         .where((o) => _selectedOrgId == null || o['id'].toString() == _selectedOrgId)
         .toList();
 
     return DefaultTabController(
-      length: 4,
+      length: 3,
       initialIndex: widget.initialTab == 'ongoing' ? 1 : 0,
       child: Padding(
         padding: const EdgeInsets.all(40),
@@ -1976,7 +2043,6 @@ class _ManageEventsViewState extends State<_ManageEventsView> {
                   Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.pending_actions_rounded, size: 18), const SizedBox(width: 8), Text('Awaiting Approval (${awaiting.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
                   Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.play_circle_fill_rounded, size: 18), const SizedBox(width: 8), Text('Scheduled & Ongoing (${ongoing.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
                   const Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.calendar_month_rounded, size: 18), SizedBox(width: 8), Text('Organizations Schedule', style: TextStyle(fontWeight: FontWeight.bold))])),
-                  Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.warning_amber_rounded, size: 18), const SizedBox(width: 8), Text('Schedule Conflicts (${conflictRequests.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
                 ],
               ),
             ),
@@ -2047,52 +2113,6 @@ class _ManageEventsViewState extends State<_ManageEventsView> {
                       );
                     },
                   ),
-                  // Schedule conflicts are warnings only. Admin can approve each request even when it overlaps another event.
-                  conflictRequests.isEmpty
-                      ? const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.check_circle_outline_rounded, size: 44, color: Colors.green), SizedBox(height: 12), Text('No schedule conflicts detected.', style: TextStyle(color: Colors.grey))]))
-                      : ListView.builder(
-                    itemCount: conflictRequests.length,
-                    itemBuilder: (context, index) {
-                      final event = conflictRequests[index];
-                      final eventOrg = widget.organizations.firstWhere((o) => o['id']?.toString() == event['organization_id']?.toString(), orElse: () => {'name': 'Unknown Organization'});
-                      final conflicts = _findScheduleConflicts(event, activeActivities);
-                      final start = DateTime.tryParse(event['proposed_date']?.toString() ?? '')?.toLocal();
-                      final end = start?.add(AppUtils.parseDuration(event['time_frame']));
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 16),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFFCA5A5))),
-                        child: Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Row(children: [const Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626)), const SizedBox(width: 8), Expanded(child: Text('${eventOrg['name'] ?? 'Unknown Organization'} — ${event['title'] ?? 'Untitled Event'}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))), Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(20)), child: Text('${conflicts.length} conflict(s)', style: const TextStyle(color: Color(0xFFB91C1C), fontWeight: FontWeight.bold, fontSize: 12)))]),
-                            const SizedBox(height: 12),
-                            Text('Date: ${start == null ? 'Not set' : AppUtils.formatDateTime(start.toIso8601String())}'),
-                            Text('Start time: ${start == null ? '—' : _fmt12(start)}'),
-                            Text('End time: ${end == null ? '—' : _fmt12(end)}'),
-                            Text('Facilities and materials: ${(event['facilities_materials'] ?? 'Not specified').toString()}'),
-                            const SizedBox(height: 12),
-                            const Text('Conflicting event schedules', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF991B1B))),
-                            const SizedBox(height: 6),
-                            ...conflicts.map((other) {
-                              final otherOrg = widget.organizations.firstWhere((o) => o['id']?.toString() == other['organization_id']?.toString(), orElse: () => {'name': 'Unknown Organization'});
-                              final otherStart = DateTime.tryParse(other['proposed_date']?.toString() ?? '')?.toLocal();
-                              final otherEnd = otherStart?.add(AppUtils.parseDuration(other['time_frame']));
-                              return Container(margin: const EdgeInsets.only(top: 6), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFFFF7F7), borderRadius: BorderRadius.circular(10)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Organization: ${otherOrg['name'] ?? 'Unknown Organization'}', style: const TextStyle(fontWeight: FontWeight.w700)), Text('Event: ${other['title'] ?? 'Untitled Event'}'), Text('Date: ${otherStart == null ? 'Not set' : AppUtils.formatDateTime(otherStart.toIso8601String())}'), Text('Start: ${otherStart == null ? '—' : _fmt12(otherStart)}   End: ${otherEnd == null ? '—' : _fmt12(otherEnd)}'), Text('Facilities and materials: ${(other['facilities_materials'] ?? 'Not specified').toString()}'), Text('Status: ${other['status']}', style: const TextStyle(fontSize: 12, color: Color(0xFF991B1B), fontWeight: FontWeight.w700))]));
-                            }),
-                            const SizedBox(height: 16),
-                            const Text('This is a warning only. You may approve this event even if another event overlaps.', style: TextStyle(color: Color(0xFF92400E), fontWeight: FontWeight.w600)),
-                            const SizedBox(height: 12),
-                            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                              OutlinedButton.icon(onPressed: () => _declineConflictEvent(event), icon: const Icon(Icons.close_rounded), label: const Text('Reject'), style: OutlinedButton.styleFrom(foregroundColor: Colors.red)),
-                              const SizedBox(width: 10),
-                              ElevatedButton.icon(onPressed: () => _approveConflictEvent(event, conflicts.length), icon: const Icon(Icons.check_rounded), label: const Text('Approve'), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), foregroundColor: Colors.white)),
-                            ]),
-                          ]),
-                        ),
-                      );
-                    },
-                  ),
                 ],
               ),
             ),
@@ -2123,47 +2143,6 @@ class _ManageEventsViewState extends State<_ManageEventsView> {
     }).toList();
   }
 
-  Future<void> _approveConflictEvent(Map<String, dynamic> event, int conflictCount) async {
-    final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-      title: const Text('Approve Event Date?'),
-      content: Text(conflictCount > 0 ? 'Warning: this event overlaps with $conflictCount other event(s). This is only a warning. Do you still want to approve it?' : 'Approve this event date?'),
-      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')), ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Approve anyway'))],
-    ));
-    if (confirmed != true) return;
-    try {
-      await Supabase.instance.client.from('activities').update({'status': 'Scheduled', 'remarks': null}).eq('id', event['id']);
-      for (final role in ['president', 'adviser']) {
-        AppUtils.sendNotification(title: 'Event Date Confirmed 📅', body: 'Proposed date for "${event['title']}" confirmed for ${AppUtils.formatEventRange(event['proposed_date'], event['time_frame'])}.', recipientRole: role, organizationId: event['organization_id']?.toString());
-      }
-      if (!mounted) return;
-      AppUtils.showTopToast(context, 'Event date approved. Conflict warning does not block approval.');
-      widget.onRefresh();
-    } catch (e) {
-      if (mounted) AppUtils.showTopToast(context, 'Could not approve event: $e', isError: true);
-    }
-  }
-
-  Future<void> _declineConflictEvent(Map<String, dynamic> event) async {
-    final remarks = TextEditingController();
-    final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-      title: const Text('Reject Event Date'),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [const Text('Provide feedback so the organization can propose another date.'), const SizedBox(height: 12), TextField(controller: remarks, maxLines: 3, decoration: const InputDecoration(labelText: 'Reason / feedback', border: OutlineInputBorder()))]),
-      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')), ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white), child: const Text('Reject'))],
-    ));
-    if (confirmed != true) return;
-    try {
-      await Supabase.instance.client.from('activities').update({'status': 'Reschedule', 'remarks': remarks.text.trim()}).eq('id', event['id']);
-      for (final role in ['president', 'adviser']) {
-        AppUtils.sendNotification(title: 'Event Date Rejected ⚠️', body: 'The proposed date for "${event['title']}" was rejected. Please review the feedback and propose a new date.', recipientRole: role, organizationId: event['organization_id']?.toString());
-      }
-      if (!mounted) return;
-      AppUtils.showTopToast(context, 'Event date rejected; rescheduling requested.');
-      widget.onRefresh();
-    } catch (e) {
-      if (mounted) AppUtils.showTopToast(context, 'Could not reject event: $e', isError: true);
-    }
-  }
-
   int _queueRank(Map<String, dynamic> act) {
     DateTime t(Map<String, dynamic> a) =>
         DateTime.tryParse(a['date_requested_at']?.toString() ?? '') ??
@@ -2178,25 +2157,36 @@ class _ManageEventsViewState extends State<_ManageEventsView> {
   Widget _buildEventCard(BuildContext context, Map<String, dynamic> act, Map<String, dynamic> org) {
     final status = act['status'];
     final bool isAwaiting = status == 'Awaiting Date Approval';
+    final conflicts = _findScheduleConflicts(act, widget.activities);
+    final hasConflict = conflicts.isNotEmpty;
 
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: isAwaiting ? const Color(0xFF6366F1).withValues(alpha: 0.2) : Colors.grey.withValues(alpha: 0.1), width: isAwaiting ? 1.5 : 1),
+        side: BorderSide(
+          color: hasConflict
+              ? const Color(0xFFDC2626)
+              : (isAwaiting ? const Color(0xFF6366F1).withValues(alpha: 0.2) : Colors.grey.withValues(alpha: 0.1)),
+          width: (hasConflict || isAwaiting) ? 1.5 : 1,
+        ),
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         leading: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: (status == 'Scheduled' ? Colors.green : (isAwaiting ? const Color(0xFF6366F1) : Colors.orange)).withValues(alpha: 0.1),
+            color: (hasConflict
+                ? const Color(0xFFDC2626)
+                : (status == 'Scheduled' ? Colors.green : (isAwaiting ? const Color(0xFF6366F1) : Colors.orange))).withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(
-            status == 'Scheduled' ? Icons.event_available_rounded : Icons.event_rounded,
-            color: status == 'Scheduled' ? Colors.green : (isAwaiting ? const Color(0xFF6366F1) : Colors.orange),
+            hasConflict ? Icons.warning_amber_rounded : (status == 'Scheduled' ? Icons.event_available_rounded : Icons.event_rounded),
+            color: hasConflict
+                ? const Color(0xFFDC2626)
+                : (status == 'Scheduled' ? Colors.green : (isAwaiting ? const Color(0xFF6366F1) : Colors.orange)),
           ),
         ),
         title: Text(act['title'] ?? 'Untitled Activity', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
@@ -2207,6 +2197,21 @@ class _ManageEventsViewState extends State<_ManageEventsView> {
             Row(
               children: [
                 StatusBadge(status: status),
+                if (hasConflict) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF2F2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFCA5A5)),
+                    ),
+                    child: Text(
+                      '⚠️ ${conflicts.length} Conflict${conflicts.length == 1 ? '' : 's'}',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFFDC2626)),
+                    ),
+                  ),
+                ],
                 if (isAwaiting) ...[
                   const SizedBox(width: 8),
                   Container(
@@ -2847,7 +2852,7 @@ class _AccomplishmentReportsViewState extends State<_AccomplishmentReportsView> 
                 itemCount: groupedReports.keys.length,
                 itemBuilder: (context, groupIdx) {
                   final orgName = groupedReports.keys.elementAt(groupIdx);
-                  final reportsList = groupedReports[orgName]!;
+                  final reportsList = groupedReports[orgName] ?? [];
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 28),
@@ -3460,7 +3465,7 @@ class _AddScoresViewState extends State<_AddScoresView> {
 
   List<Map<String, dynamic>> get _filteredOrganizations {
     if (_selectedOrgType == null) return widget.organizations;
-    final target = _selectedOrgType!.toLowerCase();
+    final target = (_selectedOrgType ?? '').toLowerCase();
     final matches = widget.organizations.where((o) {
       final type = (o['type'] ?? '').toString().toLowerCase();
       if (target.contains('college')) return type.contains('college');
@@ -4389,7 +4394,7 @@ class _AddScoresViewState extends State<_AddScoresView> {
 
   Widget _buildSdgLegend() {
     final profile = _profileKey;
-    final tiers = kSdgTiers[profile]!;
+    final tiers = kSdgTiers[profile] ?? [];
     final n = profile == 'campus' ? 5 : 6;
     var maxRows = 0;
     for (var i = 0; i < n; i++) {
@@ -5149,7 +5154,7 @@ class _AddScoresViewState extends State<_AddScoresView> {
     final double maxScore = isSpecialized
         ? (key == 'i' ? 20.0 : (key == 'ii' ? 30.0 : 10.0))
         : ((key == 'vii') ? 15.0 : (key == 'iii' ? 5.0 : 10.0));
-    final controller = _controllers[key]!;
+    final controller = _controllers[key] ?? TextEditingController();
 
     return Container(
       height: 40,
@@ -5199,10 +5204,266 @@ class GuideItem extends StatelessWidget {
   }
 }
 
-class _ManageReAccreditationView extends StatelessWidget {
-  const _ManageReAccreditationView();
+class _ManageReAccreditationView extends StatefulWidget {
+  final List<Map<String, dynamic>> organizations;
+  final VoidCallback? onRefresh;
+  final String searchQuery;
+  const _ManageReAccreditationView({
+    required this.organizations,
+    this.onRefresh,
+    this.searchQuery = '',
+  });
+
   @override
-  Widget build(BuildContext context) { return const Center(child: Text('Re-Accreditation coming soon.')); }
+  State<_ManageReAccreditationView> createState() => _ManageReAccreditationViewState();
+}
+
+class _ManageReAccreditationViewState extends State<_ManageReAccreditationView> {
+  @override
+  Widget build(BuildContext context) {
+    final search = widget.searchQuery.toLowerCase().trim();
+    final allOrgs = widget.organizations.where((org) {
+      final name = (org['name'] ?? '').toString().toLowerCase();
+      final type = (org['type'] ?? '').toString().toLowerCase();
+      return search.isEmpty || name.contains(search) || type.contains(search);
+    }).toList();
+
+    final pendingOrgs = allOrgs.where((o) =>
+        (o['reaccreditation_status'] ?? (o['reaccreditation_url'] != null && o['reaccreditation_url'].toString().isNotEmpty ? 'Pending' : 'Not Submitted')).toString() == 'Pending'
+    ).toList();
+
+    final approvedOrgs = allOrgs.where((o) =>
+        (o['reaccreditation_status'] ?? '').toString() == 'Approved'
+    ).toList();
+
+    final unsubmittedOrgs = allOrgs.where((o) {
+      final url = (o['reaccreditation_url'] ?? '').toString();
+      final status = (o['reaccreditation_status'] ?? '').toString();
+      return url.isEmpty || status == 'Not Submitted';
+    }).toList();
+
+    return DefaultTabController(
+      length: 3,
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Organization Re-Accreditation', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Color(0xFF0F172A), letterSpacing: -1)),
+                    const SizedBox(height: 4),
+                    Text('Review and approve annual re-accreditation attachments from student organizations (${widget.organizations.length} total).', style: const TextStyle(color: Color(0xFF64748B), fontSize: 15, fontWeight: FontWeight.w500)),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10)],
+              ),
+              child: TabBar(
+                labelColor: Colors.white,
+                unselectedLabelColor: const Color(0xFF64748B),
+                indicatorSize: TabBarIndicatorSize.tab,
+                indicator: BoxDecoration(borderRadius: BorderRadius.circular(12), color: const Color(0xFF6366F1)),
+                dividerColor: Colors.transparent,
+                tabs: [
+                  Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.pending_actions_rounded, size: 18), const SizedBox(width: 8), Text('Awaiting Approval (${pendingOrgs.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
+                  Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.verified_rounded, size: 18), const SizedBox(width: 8), Text('Re-Accredited (${approvedOrgs.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
+                  Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.history_edu_rounded, size: 18), const SizedBox(width: 8), Text('Not Submitted (${unsubmittedOrgs.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  _buildOrgList(pendingOrgs, emptyText: 'No re-accreditation documents awaiting approval.'),
+                  _buildOrgList(approvedOrgs, emptyText: 'No re-accredited organizations yet.'),
+                  _buildOrgList(unsubmittedOrgs, emptyText: 'All organizations have submitted re-accreditation documents!'),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOrgList(List<Map<String, dynamic>> orgs, {required String emptyText}) {
+    if (orgs.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.check_circle_outline_rounded, size: 48, color: Colors.green),
+            const SizedBox(height: 16),
+            Text(emptyText, style: const TextStyle(color: Colors.grey, fontSize: 15)),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: orgs.length,
+      itemBuilder: (context, index) {
+        final org = orgs[index];
+        final status = (org['reaccreditation_status'] ?? (org['reaccreditation_url'] != null && org['reaccreditation_url'].toString().isNotEmpty ? 'Pending' : 'Not Submitted')).toString();
+        final url = (org['reaccreditation_url'] ?? '').toString();
+        final submittedAt = org['reaccreditation_submitted_at'];
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFF1F5F9)),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10, offset: const Offset(0, 4))],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6366F1).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.verified_user_rounded, color: Color(0xFF6366F1), size: 24),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(org['name']?.toUpperCase() ?? 'UNKNOWN ORG', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF1E293B))),
+                          const SizedBox(height: 4),
+                          Text(org['type'] ?? '', style: const TextStyle(fontSize: 12, color: Color(0xFF6366F1), fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                    _buildStatusBadge(status),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.attach_file_rounded, size: 16, color: Color(0xFF64748B)),
+                              const SizedBox(width: 6),
+                              Text(
+                                url.isNotEmpty ? 'Re-Accreditation Attachment' : 'No document attached',
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                              ),
+                            ],
+                          ),
+                          if (submittedAt != null) ...[
+                            const SizedBox(height: 4),
+                            Text('Submitted: ${AppUtils.formatDateTime(submittedAt)}', style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+                          ],
+                        ],
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        if (url.isNotEmpty)
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              final ok = await StorageUtils.open(url);
+                              if (!ok && context.mounted) AppUtils.showTopToast(context, 'Could not open attached file.', isError: true);
+                            },
+                            icon: const Icon(Icons.description_rounded, size: 16),
+                            label: const Text('View Attachment'),
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF1F5F9), foregroundColor: const Color(0xFF334155), elevation: 0),
+                          ),
+                        const SizedBox(width: 10),
+                        if (status != 'Approved' && url.isNotEmpty)
+                          ElevatedButton.icon(
+                            onPressed: () => _approveReAccreditation(org),
+                            icon: const Icon(Icons.check_rounded, size: 16),
+                            label: const Text('Approve'),
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), foregroundColor: Colors.white, elevation: 0),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildStatusBadge(String status) {
+    Color bg; Color fg; String text; IconData icon;
+    switch (status) {
+      case 'Approved':
+        bg = const Color(0xFFECFDF5); fg = const Color(0xFF059669); text = 'Re-Accredited'; icon = Icons.check_circle_rounded;
+        break;
+      case 'Pending':
+        bg = const Color(0xFFFFFBEB); fg = const Color(0xFFD97706); text = 'Awaiting Approval'; icon = Icons.hourglass_top_rounded;
+        break;
+      default:
+        bg = const Color(0xFFF1F5F9); fg = const Color(0xFF64748B); text = 'Not Submitted'; icon = Icons.remove_circle_outline_rounded;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: fg),
+          const SizedBox(width: 6),
+          Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: fg)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _approveReAccreditation(Map<String, dynamic> org) async {
+    try {
+      await Supabase.instance.client.from('organizations').update({
+        'reaccreditation_status': 'Approved',
+        'reaccreditation_remarks': null,
+      }).eq('id', org['id']);
+
+      for (final role in ['president', 'adviser']) {
+        AppUtils.sendNotification(
+          title: 'Re-Accreditation Approved 🎉',
+          body: 'Congratulations! Your organization (${org['name']}) has been officially re-accredited.',
+          recipientRole: role,
+          organizationId: org['id'].toString(),
+        );
+      }
+      if (mounted) AppUtils.showTopToast(context, '${org['name']} re-accreditation approved!');
+      widget.onRefresh?.call();
+    } catch (e) {
+      if (mounted) AppUtils.showTopToast(context, 'Could not approve re-accreditation: $e', isError: true);
+    }
+  }
 }
 
 class _RankCategory {
@@ -5223,7 +5484,6 @@ class _RankingsView extends StatefulWidget {
 
 class _RankingsViewState extends State<_RankingsView> {
   String _schoolYear = '2025-2026';
-  String _filter = 'all'; // all | campus | college | specialized
   List<Map<String, dynamic>> _evaluations = [];
   bool _isLoading = true;
 
@@ -5286,7 +5546,6 @@ class _RankingsViewState extends State<_RankingsView> {
 
   @override
   Widget build(BuildContext context) {
-    // Group the evaluations by category and sort each group by score.
     final grouped = {for (final c in _categories) c.key: <Map<String, dynamic>>[]};
     for (final e in _evaluations) {
       final key = _categoryOf(e);
@@ -5296,75 +5555,96 @@ class _RankingsViewState extends State<_RankingsView> {
       list.sort((a, b) => _scoreOf(b).compareTo(_scoreOf(a)));
     }
 
-    final visible = _categories.where((c) => _filter == 'all' || _filter == c.key).toList();
+    final campusList = grouped['campus'] ?? [];
+    final collegeList = grouped['college'] ?? [];
+    final specializedList = grouped['specialized'] ?? [];
 
-    return Padding(
-      padding: const EdgeInsets.all(40),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Leaderboard & Rankings', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -1)),
-                    Text('Top performing organizations per category based on annual evaluations.', style: TextStyle(color: _muted, fontSize: 16)),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.withValues(alpha: 0.1))),
-                child: DropdownButton<String>(
-                  value: _schoolYear,
-                  underline: const SizedBox(),
-                  items: _years.map((sy) => DropdownMenuItem(value: sy, child: Text('SY $sy'))).toList(),
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() => _schoolYear = val);
-                      _fetchRankings();
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Wrap(
-            spacing: 8,
-            children: [
-              _filterChip('all', 'All Categories'),
-              for (final c in _categories) _filterChip(c.key, c.label),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _evaluations.isEmpty
-                ? const Center(child: Text('No evaluations found for this school year.'))
-                : ListView(
+    return DefaultTabController(
+      length: 4,
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                for (final c in visible) _buildCategory(c, grouped[c.key]!),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Leaderboard & Rankings', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -1)),
+                      Text('Top performing organizations per category based on annual evaluations.', style: TextStyle(color: _muted, fontSize: 16)),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.withValues(alpha: 0.1))),
+                  child: DropdownButton<String>(
+                    value: _schoolYear,
+                    underline: const SizedBox(),
+                    items: _years.map((sy) => DropdownMenuItem(value: sy, child: Text('SY $sy'))).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _schoolYear = val);
+                        _fetchRankings();
+                      }
+                    },
+                  ),
+                ),
               ],
             ),
-          ),
-        ],
+            const SizedBox(height: 32),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10)],
+              ),
+              child: TabBar(
+                labelColor: Colors.white,
+                unselectedLabelColor: const Color(0xFF64748B),
+                indicatorSize: TabBarIndicatorSize.tab,
+                indicator: BoxDecoration(borderRadius: BorderRadius.circular(12), color: const Color(0xFF6366F1)),
+                dividerColor: Colors.transparent,
+                tabs: [
+                  Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.stars_rounded, size: 18), const SizedBox(width: 8), Text('All Categories (${_evaluations.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
+                  Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.domain_rounded, size: 18), const SizedBox(width: 8), Text('Campus Council (${campusList.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
+                  Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.account_balance_rounded, size: 18), const SizedBox(width: 8), Text('College Council (${collegeList.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
+                  Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.workspace_premium_rounded, size: 18), const SizedBox(width: 8), Text('Specialized (${specializedList.length})', style: const TextStyle(fontWeight: FontWeight.bold))])),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _evaluations.isEmpty
+                  ? const Center(child: Text('No evaluations found for this school year.'))
+                  : TabBarView(
+                children: [
+                  ListView(
+                    children: [
+                      for (final c in _categories) _buildCategory(c, grouped[c.key]!),
+                    ],
+                  ),
+                  ListView(
+                    children: [_buildCategory(_categories[0], campusList)],
+                  ),
+                  ListView(
+                    children: [_buildCategory(_categories[1], collegeList)],
+                  ),
+                  ListView(
+                    children: [_buildCategory(_categories[2], specializedList)],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
-    );
-  }
-
-  Widget _filterChip(String key, String label) {
-    final selected = _filter == key;
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => setState(() => _filter = key),
-      selectedColor: const Color(0xFF4338CA),
-      labelStyle: TextStyle(color: selected ? Colors.white : _ink, fontWeight: FontWeight.w600),
     );
   }
 
@@ -6254,7 +6534,7 @@ class _ArchivesViewState extends State<_ArchivesView> {
 
     String resolveOrgName(dynamic orgId, dynamic rawName) {
       if (orgId != null && widget.organizations != null) {
-        final match = widget.organizations!.firstWhere(
+        final match = (widget.organizations ?? []).firstWhere(
               (o) => o['id'].toString() == orgId.toString(),
           orElse: () => {'name': ''},
         );
@@ -6909,11 +7189,6 @@ Future<Map<String, String>?> _showSignatoriesDialog(
 
 Future<void> adminResetPassword(String targetUserId, String newPassword) =>
     UserAdminService.resetPassword(targetUserId, newPassword);
-String _fmt12(DateTime d) {
-  final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
-  final m = d.minute.toString().padLeft(2, '0');
-  return '$h:$m ${d.hour < 12 ? 'AM' : 'PM'}';
-}
 
 Future<bool> _confirmBulk(BuildContext context, String title, String message, String action) async {
   final res = await showDialog<bool>(
