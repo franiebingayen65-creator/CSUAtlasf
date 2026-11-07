@@ -1046,7 +1046,7 @@ class _OrgDashboardState extends State<OrgDashboard> {
         ? 0
         : activeActivities.where((a) => a['status'] == 'Completed' || AppUtils.isEventDone(a)).length;
 
-    final reaccreditationActionCount = (!isAdviser && (_orgData?['reaccreditation_status'] == null || _orgData?['reaccreditation_status'] == 'Not Submitted')) ? 1 : 0;
+    final reaccreditationActionCount = (!isAdviser && _orgData?['reaccreditation_is_archived'] != true && (_orgData?['reaccreditation_status'] == null || _orgData?['reaccreditation_status'] == 'Not Submitted')) ? 1 : 0;
 
     final org = _orgData ?? <String, dynamic>{};
     final orgName = (org['name'] ?? 'Organization').toString();
@@ -4193,7 +4193,7 @@ class _OrgProfileViewState extends State<_OrgProfileView> {
                       child: Text(widget.orgData['type']?.toString() ?? '', style: const TextStyle(color: _C.primary, fontWeight: FontWeight.w600, fontSize: 12)),
                     ),
                     const SizedBox(height: 8),
-                    _buildReaccreditationPill((widget.orgData['reaccreditation_status'] ?? (widget.orgData['reaccreditation_url'] != null && widget.orgData['reaccreditation_url'].toString().isNotEmpty ? 'Pending' : 'Not Submitted')).toString()),
+                    _buildReaccreditationPill(widget.orgData['reaccreditation_is_archived'] == true ? 'Not Submitted' : (widget.orgData['reaccreditation_status'] ?? (widget.orgData['reaccreditation_url'] != null && widget.orgData['reaccreditation_url'].toString().isNotEmpty ? 'Pending' : 'Not Submitted')).toString()),
                   ],
                 ),
               ),
@@ -5265,9 +5265,10 @@ class _OrgReAccreditationViewState extends State<_OrgReAccreditationView> {
 
   @override
   Widget build(BuildContext context) {
-    final status = (widget.orgData['reaccreditation_status'] ?? (widget.orgData['reaccreditation_url'] != null && widget.orgData['reaccreditation_url'].toString().isNotEmpty ? 'Pending' : 'Not Submitted')).toString();
-    final fileUrl = (widget.orgData['reaccreditation_url'] ?? '').toString();
-    final submittedAt = widget.orgData['reaccreditation_submitted_at'];
+    final isArchived = widget.orgData['reaccreditation_is_archived'] == true;
+    final status = isArchived ? 'Not Submitted' : (widget.orgData['reaccreditation_status'] ?? (widget.orgData['reaccreditation_url'] != null && widget.orgData['reaccreditation_url'].toString().isNotEmpty ? 'Pending' : 'Not Submitted')).toString();
+    final fileUrl = isArchived ? '' : (widget.orgData['reaccreditation_url'] ?? '').toString();
+    final submittedAt = isArchived ? null : widget.orgData['reaccreditation_submitted_at'];
     final isPresident = widget.userRole == 'President';
 
     return SingleChildScrollView(

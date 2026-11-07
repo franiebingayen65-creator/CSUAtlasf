@@ -179,13 +179,19 @@ class _LoginPageState extends State<LoginPage> {
         role == 'Admin' ? 'Login successful! Welcome Admin.' : 'Login successful! Welcome to the portal.',
       );
       Navigator.pushReplacementNamed(context, route);
-    } on AuthException {
+    } on AuthException catch (e) {
       if (mounted) {
-        AppUtils.showTopToast(context, 'Invalid email/username or password.', isError: true);
+        final msg = e.message.toLowerCase();
+        final displayMsg = msg.contains('invalid login') || msg.contains('invalid credentials')
+            ? 'Invalid email/username or password.'
+            : e.message;
+        AppUtils.showTopToast(context, displayMsg, isError: true);
+        _passwordFocus.requestFocus();
       }
     } catch (_) {
       if (mounted) {
         AppUtils.showTopToast(context, 'Something went wrong. Please try again.', isError: true);
+        _passwordFocus.requestFocus();
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

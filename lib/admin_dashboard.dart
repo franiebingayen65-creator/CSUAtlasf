@@ -360,7 +360,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         .where((a) => a['status'] == 'Awaiting Date Approval' && a['is_archived'] != true)
         .length;
     final reaccreditationCount = _organizations
-        .where((o) => (o['reaccreditation_status'] ?? (o['reaccreditation_url'] != null && o['reaccreditation_url'].toString().isNotEmpty ? 'Pending' : 'Not Submitted')).toString() == 'Pending')
+        .where((o) => o['reaccreditation_is_archived'] != true && (o['reaccreditation_status'] ?? (o['reaccreditation_url'] != null && o['reaccreditation_url'].toString().isNotEmpty ? 'Pending' : 'Not Submitted')).toString() == 'Pending')
         .length;
     final pendingUsersCount = _profiles
         .where((p) => (p['organization_id'] == null || p['organization_id'].toString().isEmpty) && p['role'] != 'Admin')
@@ -5229,14 +5229,17 @@ class _ManageReAccreditationViewState extends State<_ManageReAccreditationView> 
     }).toList();
 
     final pendingOrgs = allOrgs.where((o) =>
+        o['reaccreditation_is_archived'] != true &&
         (o['reaccreditation_status'] ?? (o['reaccreditation_url'] != null && o['reaccreditation_url'].toString().isNotEmpty ? 'Pending' : 'Not Submitted')).toString() == 'Pending'
     ).toList();
 
     final approvedOrgs = allOrgs.where((o) =>
+        o['reaccreditation_is_archived'] != true &&
         (o['reaccreditation_status'] ?? '').toString() == 'Approved'
     ).toList();
 
     final unsubmittedOrgs = allOrgs.where((o) {
+      if (o['reaccreditation_is_archived'] == true) return true;
       final url = (o['reaccreditation_url'] ?? '').toString();
       final status = (o['reaccreditation_status'] ?? '').toString();
       return url.isEmpty || status == 'Not Submitted';
@@ -5317,9 +5320,10 @@ class _ManageReAccreditationViewState extends State<_ManageReAccreditationView> 
       itemCount: orgs.length,
       itemBuilder: (context, index) {
         final org = orgs[index];
-        final status = (org['reaccreditation_status'] ?? (org['reaccreditation_url'] != null && org['reaccreditation_url'].toString().isNotEmpty ? 'Pending' : 'Not Submitted')).toString();
-        final url = (org['reaccreditation_url'] ?? '').toString();
-        final submittedAt = org['reaccreditation_submitted_at'];
+        final isArchived = org['reaccreditation_is_archived'] == true;
+        final status = isArchived ? 'Not Submitted' : (org['reaccreditation_status'] ?? (org['reaccreditation_url'] != null && org['reaccreditation_url'].toString().isNotEmpty ? 'Pending' : 'Not Submitted')).toString();
+        final url = isArchived ? '' : (org['reaccreditation_url'] ?? '').toString();
+        final submittedAt = isArchived ? null : org['reaccreditation_submitted_at'];
 
         return Container(
           margin: const EdgeInsets.only(bottom: 16),
@@ -6188,7 +6192,9 @@ class _ProfileViewState extends State<_ProfileView> {
                 const Text('• All GPOA proposals'),
                 const Text('• All events and schedules'),
                 const Text('• All accomplishment reports'),
+                const Text('• All activity plan reports'),
                 const Text('• All evaluation scores and rankings'),
+                const Text('• All re-accreditation submissions'),
                 const SizedBox(height: 10),
                 const Text('Nothing is deleted. You can still open and download everything from Archives.',
                     style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
@@ -6235,6 +6241,11 @@ class _ProfileViewState extends State<_ProfileView> {
       // 3. Accomplishment reports: shared flag, applies to ALL users
       await client.from('accomplishment_reports').update({'is_archived': true}).not('id', 'is', null);
 
+      // 3b. Re-Accreditation: archive all submissions (restorable)
+      await client.from('organizations').update({
+        'reaccreditation_is_archived': true,
+      }).not('id', 'is', null);
+
       // 4. Unlock proposal submissions for ALL organizations for the new school year
       await client.from('organizations').update({'is_unlocked': true}).not('id', 'is', null);
       await OrgUnlockService.resetAll(); // drop stale local lock/unlock overrides
@@ -6259,7 +6270,7 @@ class _ProfileViewState extends State<_ProfileView> {
     final ok = await _confirmBulk(
       context,
       'Undo the reset?',
-      'This brings back SY $prev for ALL users: GPOA, events, accomplishment reports, scores and rankings.',
+      'This brings back SY $prev for ALL users: GPOA, events, accomplishment reports, activity plan reports, scores, rankings, and re-accreditation submissions.',
       'Restore',
     );
     if (!mounted || !ok) return;
@@ -6273,6 +6284,11 @@ class _ProfileViewState extends State<_ProfileView> {
       // GPOA, events and reports, for ALL users
       await client.from('activities').update({'is_archived': false}).not('id', 'is', null);
       await client.from('accomplishment_reports').update({'is_archived': false}).not('id', 'is', null);
+
+      // Re-Accreditation: un-archive all submissions
+      await client.from('organizations').update({
+        'reaccreditation_is_archived': false,
+      }).not('id', 'is', null);
 
       // The admin's own archive
       final acts = await client.from('activities').select('id');
@@ -6353,8 +6369,8 @@ class _ProfileViewState extends State<_ProfileView> {
                     const Text('New School Year', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF991B1B))),
                     const SizedBox(height: 6),
                     Text(
-                      'Current school year: SY $_schoolYear. Reset moves all GPOA, events, accomplishment reports '
-                          'and evaluation scores to Archives and starts SY ${SchoolYearService.next(_schoolYear)} from zero.',
+                      'Current school year: SY $_schoolYear. Reset moves all GPOA, events, accomplishment reports, '
+                          'activity plan reports, evaluation scores, and re-accreditation submissions to Archives and starts SY ${SchoolYearService.next(_schoolYear)} from zero.',
                       style: const TextStyle(color: Color(0xFF7F1D1D), fontSize: 14),
                     ),
                     const SizedBox(height: 16),
