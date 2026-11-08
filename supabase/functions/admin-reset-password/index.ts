@@ -5,7 +5,9 @@ Deno.serve(async (req) => {
   const a = await requireAdmin(req);
   if (a.error) return a.error;
 
-  const { userId, newPassword } = await req.json();
+  const body = await req.json();
+  const userId = body.userId;
+  const newPassword = body.newPassword || body.password;
   if (!userId || !newPassword || newPassword.length < 8) {
     return json({ error: 'userId and a password of at least 8 characters are required' }, 400);
   }

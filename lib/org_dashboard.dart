@@ -1749,20 +1749,22 @@ class _GPOASubmissionViewState extends State<_GPOASubmissionView> {
     return true;
   }
 
+  String _ctrlVal(String key) => (_controllers[key]?.text ?? '').trim();
+
   Map<String, dynamic> _collect() => {
     'organization_id': widget.orgId,
-    'title': _controllers['title']!.text.trim(),
+    'title': _ctrlVal('title'),
     'subtitle': _selectedTypes.isEmpty ? 'General Activities' : _selectedTypes.first,
-    'description': _controllers['objectives']!.text,
+    'description': _ctrlVal('objectives'),
     'sdgs': _selectedSDGs.join(', '),
-    'objectives': _controllers['objectives']!.text,
-    'outcome': _controllers['outcome']!.text,
+    'objectives': _ctrlVal('objectives'),
+    'outcome': _ctrlVal('outcome'),
     'participants': _selectedParticipants.join(', '),
-    'time_frame': _controllers['timeFrame']!.text,
-    'delivery_strategy': _controllers['delivery']!.text,
+    'time_frame': _ctrlVal('timeFrame'),
+    'delivery_strategy': _ctrlVal('delivery'),
     'persons_involved': _selectedPersons.join(', '),
     'facilities_materials': _combineFacilitiesAndMaterials(_selectedFacilities, _selectedMaterials),
-    'budget_allocation': _controllers['budget']!.text,
+    'budget_allocation': _ctrlVal('budget'),
     'status': 'Pending',
     'proposed_date': null,
   };
@@ -1785,9 +1787,10 @@ class _GPOASubmissionViewState extends State<_GPOASubmissionView> {
   void _addToBatch() {
     if (!_validateForm()) return;
     final row = _collect();
+    final idx = _editingIndex;
     setState(() {
-      if (_editingIndex != null) {
-        _drafts[_editingIndex!] = row;
+      if (idx != null && idx >= 0 && idx < _drafts.length) {
+        _drafts[idx] = row;
       } else {
         _drafts.add(row);
       }
@@ -1829,15 +1832,16 @@ class _GPOASubmissionViewState extends State<_GPOASubmissionView> {
   }
 
   void _editDraft(int i) {
+    if (i < 0 || i >= _drafts.length) return;
     final d = _drafts[i];
     _formKey.currentState?.reset();
     setState(() {
-      _controllers['title']!.text = d['title'] ?? '';
-      _controllers['objectives']!.text = d['objectives'] ?? '';
-      _controllers['outcome']!.text = d['outcome'] ?? '';
-      _controllers['timeFrame']!.text = d['time_frame'] ?? '';
-      _controllers['delivery']!.text = d['delivery_strategy'] ?? '';
-      _controllers['budget']!.text = d['budget_allocation'] ?? '';
+      if (_controllers['title'] != null) _controllers['title']!.text = d['title'] ?? '';
+      if (_controllers['objectives'] != null) _controllers['objectives']!.text = d['objectives'] ?? '';
+      if (_controllers['outcome'] != null) _controllers['outcome']!.text = d['outcome'] ?? '';
+      if (_controllers['timeFrame'] != null) _controllers['timeFrame']!.text = d['time_frame'] ?? '';
+      if (_controllers['delivery'] != null) _controllers['delivery']!.text = d['delivery_strategy'] ?? '';
+      if (_controllers['budget'] != null) _controllers['budget']!.text = d['budget_allocation'] ?? '';
       _selectedTypes..clear()..addAll(_matchOptions(d['subtitle'], _activityTypesFor(widget.orgType)));
       _selectedSDGs..clear()..addAll(_matchOptions(d['sdgs'], _sdgOptions));
       _selectedParticipants..clear()..addAll(_splitList(d['participants']));
@@ -1855,7 +1859,7 @@ class _GPOASubmissionViewState extends State<_GPOASubmissionView> {
       AppUtils.showTopToast(context, 'Add at least one proposal first.', isError: true);
       return;
     }
-    if (_controllers['title']!.text.trim().isNotEmpty) {
+    if (_ctrlVal('title').isNotEmpty) {
       AppUtils.showTopToast(context, 'The form has a proposal that is not added yet. Tap "Add to list" first, or clear it.', isError: true);
       return;
     }
@@ -1964,7 +1968,7 @@ class _GPOASubmissionViewState extends State<_GPOASubmissionView> {
                   margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(color: _C.warning.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
-                  child: Text('Editing proposal ${_editingIndex! + 1}. Tap "Update proposal" to save your changes.',
+                  child: Text('Editing proposal ${(_editingIndex ?? 0) + 1}. Tap "Update proposal" to save your changes.',
                       style: const TextStyle(fontSize: 13, color: _C.text)),
                 ),
               Form(
@@ -2016,7 +2020,7 @@ class _GPOASubmissionViewState extends State<_GPOASubmissionView> {
                       icon: Icons.rocket_launch_rounded,
                       child: Column(children: [
                         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Expanded(child: _TimeFrameInput(key: ValueKey('tf$_formVersion'), controller: _controllers['timeFrame']!)),
+                          Expanded(child: _TimeFrameInput(key: ValueKey('tf$_formVersion'), controller: _controllers['timeFrame'] ?? TextEditingController())),
                           const SizedBox(width: 16),
                           Expanded(child: Padding(padding: const EdgeInsets.only(top: 26), child: _field('Budget (₱)', 'budget', Icons.payments_rounded, numeric: true, hint: 'Numbers only'))),
                         ]),
@@ -2550,7 +2554,7 @@ class _OrgManageEventsBody extends StatelessWidget {
         itemCount: categories.length,
         itemBuilder: (context, catIndex) {
           final categoryName = categories.keys.elementAt(catIndex);
-          final categoryEvents = categories[categoryName]!;
+          final categoryEvents = categories[categoryName] ?? [];
 
           return Container(
             margin: const EdgeInsets.only(bottom: 20),
@@ -3261,7 +3265,7 @@ class _SubmitReportDialogState extends State<_SubmitReportDialog> {
     };
     final client = Supabase.instance.client;
     if (widget.existingReport != null) {
-      await client.from('accomplishment_reports').update(data).eq('id', widget.existingReport!['id']);
+      await client.from('accomplishment_reports').update(data).eq('id', widget.existingReport?['id']);
     } else {
       await client.from('accomplishment_reports').insert({
         ...data,
@@ -3302,7 +3306,7 @@ class _SubmitReportDialogState extends State<_SubmitReportDialog> {
       try {
         if (orgId != null) {
           final o = await Supabase.instance.client.from('organizations').select('name').eq('id', orgId).maybeSingle();
-          if (o?['name'] != null) orgName = o!['name'].toString();
+          if (o != null && o['name'] != null) orgName = o['name'].toString();
         }
       } catch (_) {}
       final actTitle = (widget.activity['title'] ?? 'Activity').toString();
@@ -3433,7 +3437,7 @@ class _GPOAStatusGridView extends StatelessWidget {
                 OutlinedButton.icon(onPressed: () => onAction('GPOA Report'), icon: const Icon(Icons.print_rounded, size: 18), label: const Text('Print GPOA'), style: _outlineBtn()),
               ],
             ),
-            if (!isAdviser && orgData != null && orgData!['is_unlocked'] == true) ...[
+            if (!isAdviser && orgData?['is_unlocked'] == true) ...[
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -4732,7 +4736,7 @@ class _ArchivesViewState extends State<_ArchivesView> {
   @override
   Widget build(BuildContext context) {
     final currentOrgId = widget.orgData?['id']?.toString();
-    final orgNameFilter = widget.orgData != null ? (widget.orgData!['name'] ?? '').toString().toLowerCase().trim() : '';
+    final orgNameFilter = (widget.orgData?['name'] ?? '').toString().toLowerCase().trim();
     final query = _searchQuery.toLowerCase();
 
     final myActivities = widget.activities.where((act) {
@@ -5229,14 +5233,16 @@ class _OrgReAccreditationViewState extends State<_OrgReAccreditationView> {
   }
 
   Future<void> _submitAttachment() async {
-    if (_selectedFile == null || _selectedFile!.bytes == null) {
+    final file = _selectedFile;
+    final bytes = file?.bytes;
+    if (file == null || bytes == null) {
       AppUtils.showTopToast(context, 'Please attach a re-accreditation document first.', isError: true);
       return;
     }
     setState(() => _isUploading = true);
     try {
       final orgId = widget.orgData['id'].toString();
-      final url = await StorageUtils.upload('reaccreditation', _selectedFile!.name, _selectedFile!.bytes!);
+      final url = await StorageUtils.upload('reaccreditation', file.name, bytes);
 
       await Supabase.instance.client.from('organizations').update({
         'reaccreditation_url': url,
@@ -5396,7 +5402,7 @@ class _OrgReAccreditationViewState extends State<_OrgReAccreditationView> {
                           ),
                           const SizedBox(height: 10),
                           Text(
-                            _selectedFile != null ? _selectedFile!.name : 'Click to select re-accreditation file',
+                            _selectedFile?.name ?? 'Click to select re-accreditation file',
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.bold,

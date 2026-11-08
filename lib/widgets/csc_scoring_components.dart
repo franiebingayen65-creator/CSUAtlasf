@@ -419,13 +419,13 @@ class SDGMatrixGridCard extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: levels.map((lvl) {
-              final k = lvl['key']!;
+              final k = lvl['key']?.toString() ?? '';
               return Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 2),
                   child: Column(
                     children: [
-                      Text(lvl['label']!, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                      Text(lvl['label']?.toString() ?? '', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 4),
                       TextField(
                         controller: levelControllers['${k}_sdg'],
@@ -563,13 +563,13 @@ class CategoricalGridCard extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: levels.map((lvl) {
-              final k = lvl['key']!;
+              final k = lvl['key']?.toString() ?? '';
               return Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 2),
                   child: Column(
                     children: [
-                      Text(lvl['label']!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold)),
+                      Text(lvl['label']?.toString() ?? '', textAlign: TextAlign.center, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 4),
                       TextField(
                         controller: levelControllers[k],

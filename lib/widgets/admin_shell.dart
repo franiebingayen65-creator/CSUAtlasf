@@ -117,7 +117,7 @@ class AdminSidebar extends StatelessWidget {
                   if (g.title != null && !isCollapsed)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 20, 12, 6),
-                      child: Text(g.title!.toUpperCase(),
+                      child: Text((g.title ?? '').toUpperCase(),
                           style: const TextStyle(
                               fontSize: 11, fontWeight: FontWeight.w700, color: UiColors.muted, letterSpacing: 1)),
                     )
@@ -182,51 +182,56 @@ class _NavTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fg = selected ? UiColors.primary : UiColors.muted;
-    return Tooltip(
-      message: collapsed ? nav.label : '',
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Material(
-          color: selected ? UiColors.primary.withValues(alpha: 0.08) : Colors.transparent,
+    Widget iconWidget = Icon(nav.icon, size: 20, color: fg);
+    if (collapsed && badge > 0) {
+      iconWidget = Badge(
+        smallSize: 8,
+        child: iconWidget,
+      );
+    }
+
+    Widget tileContent = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Material(
+        color: selected ? const Color(0x144F46E5) : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: onTap,
           borderRadius: BorderRadius.circular(10),
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(10),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-              child: Row(
-                mainAxisAlignment: collapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
-                children: [
-                  Badge(
-                    isLabelVisible: badge > 0 && collapsed,
-                    smallSize: 8,
-                    child: Icon(nav.icon, size: 20, color: fg),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            child: Row(
+              mainAxisAlignment: collapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
+              children: [
+                iconWidget,
+                if (!collapsed) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(nav.label,
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                            color: selected ? UiColors.primary : UiColors.text)),
                   ),
-                  if (!collapsed) ...[
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(nav.label,
-                          style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                              color: selected ? UiColors.primary : UiColors.text)),
+                  if (badge > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(color: UiColors.warning, borderRadius: BorderRadius.circular(999)),
+                      child: Text('$badge',
+                          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
                     ),
-                    if (badge > 0)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration:
-                        BoxDecoration(color: UiColors.warning, borderRadius: BorderRadius.circular(999)),
-                        child: Text('$badge',
-                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
-                      ),
-                  ],
                 ],
-              ),
+              ],
             ),
           ),
         ),
       ),
     );
+
+    if (collapsed && nav.label.isNotEmpty) {
+      return Tooltip(message: nav.label, child: tileContent);
+    }
+    return tileContent;
   }
 }
 
@@ -539,8 +544,12 @@ class _TopOrgs extends StatelessWidget {
       final id = a['organization_id']?.toString();
       if (id != null) counts[id] = (counts[id] ?? 0) + 1;
     }
-    final ranked = organizations.where((o) => counts.containsKey(o['id'].toString())).toList()
-      ..sort((a, b) => counts[b['id'].toString()]!.compareTo(counts[a['id'].toString()]!));
+    final ranked = organizations.where((o) => counts.containsKey(o['id']?.toString())).toList()
+      ..sort((a, b) {
+        final countA = counts[a['id']?.toString()] ?? 0;
+        final countB = counts[b['id']?.toString()] ?? 0;
+        return countB.compareTo(countA);
+      });
 
     if (ranked.isEmpty) {
       return const EmptyState(

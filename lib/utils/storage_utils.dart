@@ -91,9 +91,9 @@ class StorageUtils {
 class UserAdminService {
   static final _client = Supabase.instance.client;
 
-  static Future<Map<String, dynamic>> _call(Map<String, dynamic> body) async {
+  static Future<Map<String, dynamic>> _call(String functionName, Map<String, dynamic> body) async {
     try {
-      final res = await _client.functions.invoke('admin-users', body: body);
+      final res = await _client.functions.invoke(functionName, body: body);
       final data = res.data;
       return data is Map ? Map<String, dynamic>.from(data) : {};
     } on FunctionException catch (e) {
@@ -108,8 +108,7 @@ class UserAdminService {
     required String password,
     required String role,
     String? organizationId,
-  }) => _call({
-    'action': 'create',
+  }) => _call('admin-create-user', {
     'fullName': fullName,
     'email': email,
     'password': password,
@@ -118,19 +117,23 @@ class UserAdminService {
   });
 
   static Future<void> deleteUser(String id) =>
-      _call({'action': 'delete', 'userId': id});
+      _call('admin-delete-user', {'userId': id});
 
   static Future<void> resetPassword(String id, String password) =>
-      _call({'action': 'reset_password', 'userId': id, 'password': password});
+      _call('admin-reset-password', {
+        'userId': id,
+        'password': password,
+        'newPassword': password,
+      });
 
   static Future<void> updateAccount({
     required String id,
     required String fullName,
     required String email,
-  }) => _call({
-    'action': 'update_account',
-    'userId': id,
-    'fullName': fullName,
-    'email': email,
-  });
+  }) async {
+    await _client.from('profiles').update({
+      'full_name': fullName,
+      'email': email,
+    }).eq('id', id);
+  }
 }

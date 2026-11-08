@@ -92,9 +92,10 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   final _usernameFocus = FocusNode();
   final _passwordFocus = FocusNode();
+  final _toggleFocus = FocusNode(canRequestFocus: false);
   bool _isLoading = false;
 
-  static const _domains = ['csu.edu.ph', 'gmail.com'];
+  static const _domains = ['csu.edu.ph', 'gmail.com', 'yahoo.com', 'outlook.com'];
   String _domain = _domains.first;
 
   @override
@@ -107,10 +108,10 @@ class _LoginPageState extends State<LoginPage> {
 
   String? _routeForRole(String? role) {
     final r = (role ?? '').toString().toLowerCase().trim();
-    if (r == 'admin' || r == 'administrator') {
+    if (r == 'admin' || r == 'administrator' || r == 'superadmin' || r == 'super admin') {
       return '/dashboard';
     }
-    if (r == 'president' || r == 'adviser') {
+    if (r == 'president' || r == 'adviser' || r == 'officer' || r == 'org') {
       return '/org_dashboard';
     }
     return null;
@@ -121,11 +122,19 @@ class _LoginPageState extends State<LoginPage> {
     final user = client.auth.currentUser;
     if (user == null) return;
     try {
-      final profile = await client
+      var profile = await client
           .from('profiles')
           .select('role')
           .eq('id', user.id)
           .maybeSingle();
+
+      if (profile == null && user.email != null && user.email!.isNotEmpty) {
+        profile = await client
+            .from('profiles')
+            .select('role')
+            .eq('email', user.email!)
+            .maybeSingle();
+      }
 
       final route = _routeForRole(profile?['role']?.toString());
       if (!mounted) return;
@@ -139,62 +148,172 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  bool _isInvalidCredentials(AuthException e) {
+    final msg = e.message.toLowerCase();
+    final code = (e.code ?? '').toLowerCase();
+    return code == 'invalid_credentials' ||
+        code == 'invalid_grant' ||
+        code == 'user_not_found' ||
+        msg.contains('invalid login') ||
+        msg.contains('invalid credentials') ||
+        msg.contains('invalid email') ||
+        msg.contains('user not found') ||
+        msg.contains('wrong password');
+  }
+
+  List<String> _getCandidateEmails(String input) {
+    final trimmed = input.trim().toLowerCase();
+    if (trimmed.isEmpty) return [];
+
+    final candidates = <String>[];
+
+    if (trimmed.contains('@')) {
+      candidates.add(trimmed);
+      final prefix = trimmed.split('@').first.trim();
+      if (prefix.isNotEmpty) {
+        candidates.add(prefix);
+      }
+    } else {
+      candidates.add('$trimmed@$_domain');
+      candidates.add(trimmed);
+    }
+
+    return candidates.toSet().toList();
+  }
+
+  /// Tries candidate email formats in priority order to handle both bare usernames
+  /// and full email addresses across any domain stored in the database.
+  Future<AuthResponse> _signIn(String input, String password) async {
+    final auth = Supabase.instance.client.auth;
+    final candidates = _getCandidateEmails(input);
+    AuthException? last;
+
+    for (final emailCandidate in candidates) {
+      try {
+        return await auth.signInWithPassword(
+          email: emailCandidate,
+          password: password,
+        );
+      } on AuthException catch (e) {
+        last = e;
+        if (!_isInvalidCredentials(e)) rethrow;
+      }
+    }
+    throw last ?? const AuthException('Invalid login credentials.');
+  }
+
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
     final input = _usernameController.text.trim().toLowerCase();
     final password = _passwordController.text;
-    final email = input.contains('@') ? input : '$input@$_domain';
     final client = Supabase.instance.client;
+    var success = false;
 
     try {
-      final response = await client.auth.signInWithPassword(
-        email: email,
-        password: password,
-      );
+      final response = await _signIn(input, password);
       final user = response.user;
       if (user == null) throw const AuthException('Invalid login credentials.');
 
-      final profile = await client
+      // Check profile by user ID first
+      Map<String, dynamic>? profile = await client
           .from('profiles')
           .select('role')
           .eq('id', user.id)
           .maybeSingle();
 
-      final role = profile?['role']?.toString();
-      final route = _routeForRole(role);
+      // Fallback: check profile by user email if ID lookup returns null
+      if (profile == null && user.email != null && user.email!.isNotEmpty) {
+        profile = await client
+            .from('profiles')
+            .select('role')
+            .eq('email', user.email!)
+            .maybeSingle();
+      }
+
+      // Fallback: check profile by raw input prefix
+      if (profile == null) {
+        final prefix = input.contains('@') ? input.split('@').first : input;
+        profile = await client
+            .from('profiles')
+            .select('role')
+            .eq('email', prefix)
+            .maybeSingle();
+      }
+
       if (!mounted) return;
 
-      if (route == null) {
+      if (profile == null) {
         await client.auth.signOut();
         if (mounted) {
-          AppUtils.showTopToast(context, 'Access denied: Unauthorized role.', isError: true);
+          AppUtils.showTopToast(
+            context,
+            'Signed in, but no profile was found for this account. Contact the administrator.',
+            isError: true,
+          );
         }
         return;
       }
 
+      final route = _routeForRole(profile['role']?.toString());
+      if (route == null) {
+        await client.auth.signOut();
+        if (mounted) {
+          AppUtils.showTopToast(
+            context,
+            'Access denied: Unauthorized role.',
+            isError: true,
+          );
+        }
+        return;
+      }
+
+      success = true;
       AppUtils.showTopToast(
         context,
-        role == 'Admin' ? 'Login successful! Welcome Admin.' : 'Login successful! Welcome to the portal.',
+        route == '/dashboard'
+            ? 'Login successful! Welcome Admin.'
+            : 'Login successful! Welcome to the portal.',
       );
       Navigator.pushReplacementNamed(context, route);
     } on AuthException catch (e) {
       if (mounted) {
         final msg = e.message.toLowerCase();
-        final displayMsg = msg.contains('invalid login') || msg.contains('invalid credentials')
-            ? 'Invalid email/username or password.'
-            : e.message;
+        final String displayMsg;
+        if (_isInvalidCredentials(e)) {
+          displayMsg = 'Invalid email/username or password.';
+        } else if (e.code == 'email_not_confirmed' ||
+            msg.contains('not confirmed')) {
+          displayMsg =
+          'This account\'s email is not confirmed yet. Check your inbox or contact the administrator.';
+        } else {
+          displayMsg = e.message;
+        }
         AppUtils.showTopToast(context, displayMsg, isError: true);
-        _passwordFocus.requestFocus();
       }
     } catch (_) {
       if (mounted) {
-        AppUtils.showTopToast(context, 'Something went wrong. Please try again.', isError: true);
-        _passwordFocus.requestFocus();
+        AppUtils.showTopToast(
+          context,
+          'Something went wrong. Please try again.',
+          isError: true,
+        );
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        if (!success) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _passwordController.selection = TextSelection(
+              baseOffset: 0,
+              extentOffset: _passwordController.text.length,
+            );
+            _passwordFocus.requestFocus();
+          });
+        }
+      }
     }
   }
 
@@ -204,6 +323,7 @@ class _LoginPageState extends State<LoginPage> {
     _passwordController.dispose();
     _usernameFocus.dispose();
     _passwordFocus.dispose();
+    _toggleFocus.dispose();
     super.dispose();
   }
 
@@ -250,9 +370,11 @@ class _LoginPageState extends State<LoginPage> {
                   );
 
                   return SingleChildScrollView(
-                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                    keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                     child: ConstrainedBox(
-                      constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                      constraints:
+                      BoxConstraints(minHeight: constraints.maxHeight),
                       child: Center(
                         child: Padding(
                           padding: EdgeInsets.symmetric(
@@ -384,6 +506,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
             const SizedBox(height: 32),
             _buildInputField(
+              fieldKey: const ValueKey('username_input_field'),
               controller: _usernameController,
               focusNode: _usernameFocus,
               label: 'Email or Username',
@@ -405,6 +528,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
             const SizedBox(height: 8),
             _buildInputField(
+              fieldKey: const ValueKey('password_input_field'),
               controller: _passwordController,
               focusNode: _passwordFocus,
               label: 'Password',
@@ -431,20 +555,45 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Widget _buildDomainPicker() {
-    return Align(
-      widthFactor: 1,
-      heightFactor: 1,
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
       child: PopupMenuButton<String>(
         enabled: !_isLoading,
-        tooltip: 'Choose email domain',
+        tooltip: 'Select email domain',
         initialValue: _domain,
-        onSelected: (v) => setState(() => _domain = v),
+        onSelected: (picked) {
+          if (mounted) setState(() => _domain = picked);
+        },
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        color: Colors.white,
+        elevation: 4,
         itemBuilder: (context) => [
           for (final d in _domains)
-            PopupMenuItem<String>(value: d, child: Text('@$d')),
+            PopupMenuItem<String>(
+              value: d,
+              height: 40,
+              child: Row(
+                children: [
+                  Text(
+                    '@$d',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: d == _domain ? FontWeight.w700 : FontWeight.w400,
+                      color: d == _domain ? _T.indigo : _T.textPrimary,
+                    ),
+                  ),
+                  if (d == _domain) ...[
+                    const Spacer(),
+                    const Icon(Icons.check_rounded, size: 16, color: _T.indigo),
+                  ],
+                ],
+              ),
+            ),
         ],
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -516,7 +665,8 @@ class _LoginPageState extends State<LoginPage> {
               SizedBox(width: 12),
               Text(
                 'Signing in…',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                style:
+                TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
             ],
           )
@@ -666,6 +816,7 @@ class _LoginPageState extends State<LoginPage> {
       );
 
   Widget _buildInputField({
+    Key? fieldKey,
     required TextEditingController controller,
     required FocusNode focusNode,
     required String label,
@@ -694,17 +845,19 @@ class _LoginPageState extends State<LoginPage> {
         ),
         const SizedBox(height: 6),
         TextFormField(
+          key: fieldKey,
           controller: controller,
           focusNode: focusNode,
           enabled: !_isLoading,
           obscureText: obscureText,
           autofillHints: autofillHints,
-          keyboardType: keyboardType,
+          keyboardType:
+          keyboardType ?? (isPassword ? TextInputType.visiblePassword : null),
           textInputAction: textInputAction,
           validator: validator,
           onFieldSubmitted: onSubmitted,
           autocorrect: false,
-          enableSuggestions: !isPassword,
+          enableSuggestions: false,
           style: const TextStyle(fontSize: 14.5, color: _T.textPrimary),
           decoration: InputDecoration(
             hintText: hintText,
@@ -720,6 +873,7 @@ class _LoginPageState extends State<LoginPage> {
             prefixIcon: Icon(icon, size: 19, color: _T.textSecondary),
             suffixIcon: isPassword
                 ? IconButton(
+              focusNode: _toggleFocus,
               tooltip: obscureText ? 'Show password' : 'Hide password',
               icon: Icon(
                 obscureText
@@ -731,6 +885,8 @@ class _LoginPageState extends State<LoginPage> {
               onPressed: _isLoading ? null : onToggle,
             )
                 : suffix,
+            suffixIconConstraints:
+            const BoxConstraints(minWidth: 0, minHeight: 0),
             filled: true,
             fillColor: _isLoading ? _T.inputFillDisabled : _T.inputFill,
             hoverColor: Colors.white,

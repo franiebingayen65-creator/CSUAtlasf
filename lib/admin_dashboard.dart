@@ -1282,11 +1282,20 @@ class _ManageUsersViewState extends State<_ManageUsersView> {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(
-                          tooltip: 'Edit User',
-                          icon: const Icon(Icons.edit_rounded, color: Color(0xFF0284C7)),
-                          onPressed: () => _showEditUserDialog(context, user),
-                        ),
+                        if (user['id']?.toString() == Supabase.instance.client.auth.currentUser?.id)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 12),
+                            child: Tooltip(
+                              message: 'You cannot edit your own account from here. Use My Profile instead.',
+                              child: Icon(Icons.person_outline_rounded, color: Color(0xFF94A3B8)),
+                            ),
+                          )
+                        else
+                          IconButton(
+                            tooltip: 'Edit User',
+                            icon: const Icon(Icons.edit_rounded, color: Color(0xFF0284C7)),
+                            onPressed: () => _showEditUserDialog(context, user),
+                          ),
                         IconButton(
                           tooltip: 'Reset Password',
                           icon: const Icon(Icons.lock_reset_rounded, color: Color(0xFFD97706)),
@@ -1381,6 +1390,10 @@ class _ManageUsersViewState extends State<_ManageUsersView> {
   void _showEditUserDialog(BuildContext context, Map<String, dynamic> user) {
     final userId = user['id']?.toString();
     final isSelf = userId != null && userId == Supabase.instance.client.auth.currentUser?.id;
+    if (isSelf) {
+      AppUtils.showTopToast(context, 'You cannot edit your own account here. Use My Profile instead.', isError: true);
+      return;
+    }
     final isSuper = user['is_super_admin'] == true;
 
     final name = TextEditingController(text: (user['full_name'] ?? '').toString());
@@ -5553,7 +5566,7 @@ class _RankingsViewState extends State<_RankingsView> {
     final grouped = {for (final c in _categories) c.key: <Map<String, dynamic>>[]};
     for (final e in _evaluations) {
       final key = _categoryOf(e);
-      if (key != null) grouped[key]!.add(e);
+      if (key != null) (grouped[key] ??= []).add(e);
     }
     for (final list in grouped.values) {
       list.sort((a, b) => _scoreOf(b).compareTo(_scoreOf(a)));
@@ -5631,7 +5644,7 @@ class _RankingsViewState extends State<_RankingsView> {
                 children: [
                   ListView(
                     children: [
-                      for (final c in _categories) _buildCategory(c, grouped[c.key]!),
+                      for (final c in _categories) _buildCategory(c, grouped[c.key] ?? []),
                     ],
                   ),
                   ListView(
@@ -6802,7 +6815,7 @@ class _ArchivesViewState extends State<_ArchivesView> {
               itemCount: groupedDocs.keys.length,
               itemBuilder: (ctx, groupIdx) {
                 final orgName = groupedDocs.keys.elementAt(groupIdx);
-                final docsList = groupedDocs[orgName]!;
+                final docsList = groupedDocs[orgName] ?? [];
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 28),
