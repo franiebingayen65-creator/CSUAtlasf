@@ -3437,7 +3437,7 @@ class _GPOAStatusGridView extends StatelessWidget {
                 OutlinedButton.icon(onPressed: () => onAction('GPOA Report'), icon: const Icon(Icons.print_rounded, size: 18), label: const Text('Print GPOA'), style: _outlineBtn()),
               ],
             ),
-            if (!isAdviser && orgData?['is_unlocked'] == true) ...[
+            if (!isAdviser && !locked && orgData?['is_unlocked'] == true) ...[
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -3462,7 +3462,7 @@ class _GPOAStatusGridView extends StatelessWidget {
                     Icon(Icons.lock_rounded, color: Color(0xFFD97706), size: 18),
                     SizedBox(width: 10),
                     Expanded(
-                      child: Text('All your GPOA proposals are approved. Proposal creation is locked for this school year unless unlocked by Admin.', style: TextStyle(fontSize: 13, color: Color(0xFFB45309), fontWeight: FontWeight.w600)),
+                      child: Text('All GPOA proposals have been approved by the adviser and admin. Proposal creation is automatically locked for this school year unless unlocked by Admin.', style: TextStyle(fontSize: 13, color: Color(0xFFB45309), fontWeight: FontWeight.w600)),
                     ),
                   ],
                 ),
@@ -5162,20 +5162,25 @@ const _approvedStates = ['Approved', 'Reschedule', 'Awaiting Date Approval', 'Sc
 
 /// True when proposals are locked for this organization:
 /// 1. Admin explicitly locked it (`is_unlocked == false`), OR
-/// 2. Organization has active proposals, all active proposals are approved, AND Admin has not explicitly unlocked it (`is_unlocked != true`).
+/// 2. Organization has active proposals and ALL of them are approved by both Adviser & Admin.
 bool _gpoaLocked(List<Map<String, dynamic>> acts, {Map<String, dynamic>? orgData}) {
-  if (orgData != null) {
-    if (orgData['is_unlocked'] == false) {
-      return true; // Explicitly locked by Admin!
-    }
-    if (orgData['is_unlocked'] == true) {
-      return false; // Explicitly unlocked by Admin!
-    }
+  if (orgData != null && orgData['is_unlocked'] == false) {
+    return true; // Explicitly locked by Admin!
   }
 
-  // Automatic lock rule: Locked if org has active proposals and ALL of them are approved.
+  // Automatic lock rule: Locked if org has active proposals and ALL of them are approved by Adviser & Admin.
   final active = acts.where((a) => a['is_archived'] != true).toList();
-  return active.isNotEmpty && active.every((a) => _approvedStates.contains(a['status']));
+  final allApproved = active.isNotEmpty && active.every((a) => _approvedStates.contains(a['status']));
+
+  if (allApproved) {
+    return true; // All GPOA proposals passed & approved by adviser & admin => Automatically locked!
+  }
+
+  if (orgData != null && orgData['is_unlocked'] == true) {
+    return false; // Explicitly unlocked by Admin while new proposals are being added/pending!
+  }
+
+  return false;
 }
 
 Future<void> _adviserApproveAll(BuildContext context, List<Map<String, dynamic>> pending, VoidCallback onRefresh) async {

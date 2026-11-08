@@ -789,6 +789,9 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
           organizationId: act['organization_id']?.toString(),
         );
       }
+      if (s == 'Approved') {
+        await _checkAndLockIfAllApproved(act['organization_id']?.toString());
+      }
       if (!mounted) return;
       AppUtils.showTopToast(context, s == 'Approved'
           ? 'GPOA approved and moved to scheduling!'
@@ -826,6 +829,7 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
           .whereType<String>()
           .toSet();
       for (final orgId in orgIds) {
+        await _checkAndLockIfAllApproved(orgId);
         final n = list
             .where((a) => a['organization_id']?.toString() == orgId)
             .length;
@@ -983,14 +987,46 @@ class _ManageGPOAViewState extends State<_ManageGPOAView> {
 const _approvedGpoaStates = ['Approved', 'Reschedule', 'Awaiting Date Approval', 'Scheduled', 'Completed'];
 
 bool _gpoaLocked(List<Map<String, dynamic>> acts, {Map<String, dynamic>? orgData}) {
-  if (orgData != null) {
-    if (orgData['is_unlocked'] == false) return true;
-    if (orgData['is_unlocked'] == true) return false;
+  if (orgData != null && orgData['is_unlocked'] == false) {
+    return true;
   }
 
-  // Automatic lock rule: Locked if org has active proposals and ALL of them are approved.
+  // Automatic lock rule: Locked if org has active proposals and ALL of them are approved by adviser & admin.
   final active = acts.where((a) => a['is_archived'] != true).toList();
-  return active.isNotEmpty && active.every((a) => _approvedGpoaStates.contains(a['status']));
+  final allApproved = active.isNotEmpty && active.every((a) => _approvedGpoaStates.contains(a['status']));
+
+  if (allApproved) {
+    return true; // All GPOA proposals passed & approved by adviser & admin => Automatically locked!
+  }
+
+  if (orgData != null && orgData['is_unlocked'] == true) {
+    return false; // Explicitly unlocked by Admin while new proposals are being added/pending!
+  }
+
+  return false;
+}
+
+Future<void> _checkAndLockIfAllApproved(String? orgId) async {
+  if (orgId == null || orgId.isEmpty) return;
+  try {
+    final client = Supabase.instance.client;
+    final acts = await client
+        .from('activities')
+        .select('status, is_archived')
+        .eq('organization_id', orgId);
+    final active = (acts as List)
+        .where((a) => a['is_archived'] != true)
+        .toList();
+    final allApproved = active.isNotEmpty &&
+        active.every((a) => _approvedGpoaStates.contains(a['status']));
+    if (allApproved) {
+      await client
+          .from('organizations')
+          .update({'is_unlocked': false})
+          .eq('id', orgId);
+      await OrgUnlockService.setStatus(orgId, false);
+    }
+  } catch (_) {}
 }
 
 class _ManageOrganizationsView extends StatelessWidget {
